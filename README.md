@@ -144,4 +144,8 @@ deleted — at which point demo CI's `git checkout <sha>` would still work
 3. Commit (`chore: bump zfb pin to the post-merge main SHA`) and push.
    CI re-clones zfb at the new SHA and re-deploys.
 
+If the bump crosses a zfb release that changes `@takazudo/zfb-adapter-cloudflare`,
+manually re-test `/catalogue` and `/cart` after deploy — those SSR-D1 routes depend
+on the adapter's Worker binding thread.
+
 S8 of the Demo Separation epic verifies and finalizes this bump.
