@@ -1,0 +1,90 @@
+# One-time D1 provisioning workflow for zfb-example-webshop.
+#
+# WHY THIS EXISTS
+# ---------------
+# `wrangler d1 create` produces the `database_id` UUIDs that must be
+# committed into `wrangler.toml`. `d1 create` must run against the SAME
+# Cloudflare account as this repo's CLOUDFLARE_* secrets — which are not
+# available locally. This workflow runs `d1 create` in CI (where the
+# secrets exist), then surfaces the resulting UUIDs as a downloadable
+# artifact + step summary so they can be pasted into `wrangler.toml`.
+#
+# It is `workflow_dispatch` only — it never runs on push. After the IDs
+# are committed, this workflow is dormant; it stays in the repo as a
+# re-runnable bootstrap (e.g. if the databases are ever recreated).
+#
+# USAGE
+# -----
+#   gh workflow run d1-bootstrap.yml --ref chore/d1-bootstrap
+#   gh run watch <run-id>
+#   gh run download <run-id> -n d1-ids
+name: D1 bootstrap (one-time)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    name: Provision D1 databases
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install wrangler
+        run: npm install -g wrangler@4
+
+      - name: Create D1 databases (idempotent)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          # `d1 create` errors if the database already exists. Tolerate
+          # that (|| true) so the workflow is re-runnable — the canonical
+          # IDs are read from `d1 list` below, never from create output.
+          out=$(wrangler d1 create webshop 2>&1) || true
+          echo "$out"
+          out=$(wrangler d1 create webshop-preview 2>&1) || true
+          echo "$out"
+
+      - name: Read database IDs
+        id: ids
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          wrangler d1 list --json > d1-list.json
+          cat d1-list.json
+          WEBSHOP_ID=$(jq -r '.[] | select(.name == "webshop") | .uuid' d1-list.json)
+          PREVIEW_ID=$(jq -r '.[] | select(.name == "webshop-preview") | .uuid' d1-list.json)
+          if [ -z "$WEBSHOP_ID" ] || [ "$WEBSHOP_ID" = "null" ]; then
+            echo "::error::could not resolve database_id for 'webshop'"
+            exit 1
+          fi
+          if [ -z "$PREVIEW_ID" ] || [ "$PREVIEW_ID" = "null" ]; then
+            echo "::error::could not resolve database_id for 'webshop-preview'"
+            exit 1
+          fi
+          jq -n --arg webshop "$WEBSHOP_ID" --arg preview "$PREVIEW_ID" \
+            '{webshop: $webshop, "webshop-preview": $preview}' > d1-ids.json
+          cat d1-ids.json
+          {
+            echo "## D1 database IDs"
+            echo ""
+            echo "Paste these into \`wrangler.toml\`:"
+            echo ""
+            echo '```toml'
+            echo "# [[d1_databases]]"
+            echo "database_id = \"$WEBSHOP_ID\"            # webshop"
+            echo "# [[env.preview.d1_databases]]"
+            echo "database_id = \"$PREVIEW_ID\"            # webshop-preview"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload D1 IDs artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: d1-ids
+          path: d1-ids.json
+          if-no-files-found: error
