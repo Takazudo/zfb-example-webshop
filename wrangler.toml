@@ -1,0 +1,29 @@
+name = "zfb-example-webshop"
+compatibility_date = "2026-05-01"
+
+# REQUIRED. The zfb Cloudflare adapter threads `env` to SSR routes via
+# `AsyncLocalStorage` from `node:async_hooks`; without `nodejs_compat`
+# the Worker fails to start with `No such module "node:async_hooks"`.
+compatibility_flags = ["nodejs_compat"]
+
+# MANDATORY. Without `pages_build_output_dir`, Cloudflare Pages treats
+# this as a project with no Pages config: it IGNORES the
+# [[d1_databases]] bindings below, `env.DB` is undefined at runtime, and
+# every SSR route 500s with NO build error. Do not omit this line.
+pages_build_output_dir = "dist"
+
+# Production D1 database. The binding name `DB` is what becomes `env.DB`
+# inside an SSR route. `database_id` is produced by `wrangler d1 create`
+# (run once via .github/workflows/d1-bootstrap.yml — CI has the
+# CLOUDFLARE_* secrets; local dev does not).
+[[d1_databases]]
+binding = "DB"
+database_name = "webshop"
+database_id = "c7596e55-1342-4eeb-a662-e6bd9f0bf720"
+
+# Preview deploys get their OWN database so a preview branch never
+# mutates production shop data.
+[[env.preview.d1_databases]]
+binding = "DB"
+database_name = "webshop-preview"
+database_id = "83cc7647-8543-431c-9cc6-28e9551fc6d9"

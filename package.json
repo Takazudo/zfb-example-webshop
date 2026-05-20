@@ -1,0 +1,31 @@
+{
+  "name": "zfb-example-webshop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.30.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "setup:upstream": "node scripts/setup-upstream.mjs",
+    "predev": "rm -rf dist .zfb .zfb-build",
+    "dev": "zfb dev",
+    "build": "zfb build && node scripts/stable-css.mjs",
+    "preview": "zfb preview",
+    "typecheck": "zfb check"
+  },
+  "dependencies": {
+    "@takazudo/zfb": "file:../zfb/packages/zfb",
+    "@takazudo/zfb-adapter-cloudflare": "file:../zfb/packages/zfb-adapter-cloudflare",
+    "@takazudo/zfb-runtime": "file:../zfb/packages/zfb-runtime",
+    "preact": "^10.22.0",
+    "preact-render-to-string": "^6.5.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240512.0",
+    "@types/node": "^22.0.0",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^5.9.3"
+  }
+}
