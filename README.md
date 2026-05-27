@@ -80,22 +80,57 @@ pnpm typecheck           # zfb check (tsc --noEmit)
 
 ### Running the cart locally against a local D1
 
-`zfb dev` serves pages, but the cart needs the D1 binding, so run the
-built worker under `wrangler`:
+The cart and accounts read `env.DB`, so they need a real Worker
+binding. `zfb dev` does **not** provide one — use the
+`wrangler pages dev`-based loop below for any work that touches D1.
+
+#### One-time setup
 
 ```sh
-# 1. Apply migrations to a local SQLite D1 (creates .wrangler/)
-wrangler d1 migrations apply webshop --local
-
-# 2. Build, then serve the worker against the local D1
-pnpm build
-wrangler pages dev dist/
+pnpm install                                   # picks up concurrently + chokidar-cli devDeps
+wrangler d1 migrations apply webshop --local   # creates .wrangler/ if needed
 ```
+
+#### Day-to-day edit-refresh loop
+
+```sh
+pnpm dev:cf
+```
+
+That single command applies migrations, runs an initial `pnpm build`,
+then starts two processes side-by-side via `concurrently`:
+
+- `wrangler pages dev dist/ --port 8788` — serves the built worker
+  against the local D1, auto-reloads when `dist/` changes.
+- `chokidar` — watches `pages/`, `components/`, `layouts/`, `lib/`,
+  `styles/`; re-runs `pnpm build` on save (200ms debounce).
+
+Edit-to-browser latency is roughly 1–2 seconds. Ctrl-C kills both
+processes cleanly.
+
+> **Do NOT run `pnpm dev` and `pnpm dev:cf` at the same time.**
+> `pnpm dev`'s `predev` step (`rm -rf dist .zfb .zfb-build`) wipes the
+> `dist/` directory that `wrangler pages dev` is actively serving,
+> putting wrangler into a degraded state where rebuilds stop
+> triggering reloads. Pick one loop at a time. If you accidentally
+> ran both, stop everything, run `pnpm build`, and restart
+> `pnpm dev:cf`.
+
+#### Requirements
 
 `wrangler pages dev` reads `compatibility_flags = ["nodejs_compat"]`
 from `wrangler.toml` — that flag is **required**, because the zfb
 Cloudflare adapter uses `node:async_hooks` to thread `env` into SSR
-routes. Then exercise sign up → add to cart → checkout in the browser.
+routes.
+
+#### D1 data lifecycle
+
+The local SQLite DB lives under `.wrangler/state/v3/d1/...` and
+persists across rebuilds and restarts of `pnpm dev:cf`. It resets
+only if you delete `.wrangler/`, switch directories, or change
+`database_name` in `wrangler.toml`. See the
+[Cloudflare D1 lifecycle](#cloudflare-d1-lifecycle) section below
+for the deploy-side picture.
 
 ## Cloudflare D1 lifecycle
 
