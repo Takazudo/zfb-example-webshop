@@ -46,17 +46,21 @@ only expands dynamic route segments for static generation.
 
 ## Sibling layout
 
-This is a **standalone** repo that depends on the `zfb` framework repo
-checked out next to it via `file:../zfb/...` dependencies:
+This is a **standalone** repo. The zfb packages (`@takazudo/zfb`,
+`@takazudo/zfb-runtime`, `@takazudo/zfb-adapter-cloudflare`) are normal
+npm registry dependencies — no `file:` links. A sibling checkout of the
+`zfb` framework repo is only used to build the `zfb` CLI from source at
+a pinned SHA (the same thing CI does):
 
 ```
 ~/repos/zfb-ex/
-  zfb/                    <- the zfb framework repo (pinned SHA)
+  zfb/                    <- the zfb framework repo (pinned SHA, CLI source)
   zfb-example-webshop/    <- this repo
 ```
 
-`framework-pins.json` records the exact zfb commit this repo builds
-against.
+`framework-pins.json` records the exact zfb commit the CLI source build
+uses. Day-to-day builds run the npm-shipped `zfb` binary from
+`node_modules/.bin`.
 
 ## Local development
 
@@ -158,29 +162,19 @@ Pushing to `main` runs `.github/workflows/deploy.yml`, which:
 4. deploys `dist/` to the `zfb-example-webshop` Cloudflare Pages
    project.
 
-## Post-merge pin-bump procedure
+## zfb upgrade procedure
 
-This repo's `framework-pins.json` currently pins the zfb
-`base/demo-separation` branch HEAD
-(`1a01628843286354c676813d8b63a52feb01cff8`).
+Two things move together when bumping zfb:
 
-After the zfb epic PR **#319** merges `base/demo-separation` into `main`
-in the zfb repo, `base/demo-separation` becomes a dead branch and may be
-deleted — at which point demo CI's `git checkout <sha>` would still work
-(the SHA is preserved by the merge) but the durable, canonical ref is
-`main`. Bump the pin:
-
-1. In the zfb repo, find the **`main` merge commit SHA** of PR #319:
-   ```sh
-   git -C ../zfb log --first-parent --oneline main | head
-   ```
-2. Edit `framework-pins.json` in this repo — set `zfb.sha` to that merge
-   commit SHA.
-3. Commit (`chore: bump zfb pin to the post-merge main SHA`) and push.
+1. Bump the npm deps — set `@takazudo/zfb`, `@takazudo/zfb-runtime`,
+   and `@takazudo/zfb-adapter-cloudflare` in `package.json` to the new
+   version and run `pnpm install`.
+2. Edit `framework-pins.json` — set `zfb.sha` to the matching zfb
+   `main` commit SHA (find it with
+   `git -C ../zfb log --first-parent --oneline main | head`).
+3. Verify: `pnpm build && pnpm typecheck`, then commit and push.
    CI re-clones zfb at the new SHA and re-deploys.
 
 If the bump crosses a zfb release that changes `@takazudo/zfb-adapter-cloudflare`,
-manually re-test `/catalogue` and `/cart` after deploy — those SSR-D1 routes depend
-on the adapter's Worker binding thread.
-
-S8 of the Demo Separation epic verifies and finalizes this bump.
+manually re-test the catalogue (`/`) and `/cart` after deploy — those SSR-D1
+routes depend on the adapter's Worker binding thread.
