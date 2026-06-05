@@ -44,9 +44,11 @@ jobs:
           ZFB_SHA=$(jq -r '.zfb.sha' framework-pins.json)
           echo "zfb_sha=${ZFB_SHA}" >> "$GITHUB_OUTPUT"
 
-      # zfb's package.json uses file:../zfb/packages/{zfb,zfb-runtime}
-      # which resolves to the sibling checkout outside GITHUB_WORKSPACE.
-      # actions/checkout rejects paths outside GITHUB_WORKSPACE, so we use git clone.
+      # The zfb CLI is built from source at the pinned SHA via
+      # `cargo install --path ../zfb/crates/zfb`. The sibling clone lives
+      # outside GITHUB_WORKSPACE and actions/checkout rejects such paths,
+      # so we use git clone. (The zfb npm packages themselves come from the
+      # registry via this repo's pnpm install — no file: links.)
       # Cargo.lock is gitignored in zudo-front-builder; use the pinned SHA as the cache key.
       - name: Clone zfb sibling at pinned SHA
         env:
@@ -79,20 +81,16 @@ jobs:
           restore-keys: |
             cargo-zfb-${{ runner.os }}-
 
-      # zfb's pnpm node_modules in the cloned sibling repo are required for
-      # TWO independent reasons, so this step runs on every job (no cache-hit
-      # guard):
+      # zfb's pnpm node_modules in the cloned sibling repo are required by
+      # the cold cargo install: zfb's build.rs reads framework packages
+      # (e.g. preact) from ../zfb/node_modules/.pnpm and panics with
+      # "framework package not found" if they're missing.
       #
-      #   1. Cold cargo install: zfb's build.rs reads framework packages
-      #      (e.g. preact) from ../zfb/node_modules/.pnpm and panics with
-      #      "framework package not found" if they're missing.
-      #
-      #   2. Example bundling (warm cargo cache): `zfb build` bundles
-      #      zfb-runtime source files via esbuild, which needs to resolve
-      #      zfb-runtime's runtime deps like `hono` from ../zfb/node_modules.
-      #      Skipping this on cache-hit causes "Could not resolve 'hono'" at
-      #      example build time.
-      - name: Install zfb workspace deps (required by zfb's cargo build script and example bundling)
+      # (Historical note: this step used to also feed example bundling when
+      # the zfb deps were file:../zfb links. With registry deps, zfb-runtime
+      # ships its own deps like `hono`, so only the cargo path needs this.
+      # Kept unconditional for simplicity — it's cheap on a warm cache.)
+      - name: Install zfb workspace deps (required by zfb's cargo build script)
         working-directory: ../zfb
         run: pnpm install --frozen-lockfile
 
