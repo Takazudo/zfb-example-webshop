@@ -41,8 +41,9 @@ Note: all routes are `prerender = false` (the catalogue reads live
 prices from D1), so the build produces no static HTML pages — only the
 SSR worker (`dist/_worker.js` + `dist/_zfb_inner.mjs`) and the compiled
 CSS asset. The order confirmation page is `/order?id=<n>` (a query
-string, not a `/order/:id` path param) because the pinned zfb release
-only expands dynamic route segments for static generation.
+string, not a `/order/:id` path param) because zfb dynamic route
+segments require a build-time `paths()` enumeration, and order ids are
+created at runtime.
 
 ## Sibling layout
 
