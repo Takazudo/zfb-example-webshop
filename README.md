@@ -92,9 +92,16 @@ binding. `zfb dev` does **not** provide one — use the
 #### One-time setup
 
 ```sh
-pnpm install                                   # picks up concurrently + chokidar-cli devDeps
-wrangler d1 migrations apply webshop --local   # creates .wrangler/ if needed
+pnpm install                                            # picks up wrangler + concurrently + chokidar-cli devDeps
+pnpm exec wrangler d1 migrations apply webshop --local  # creates .wrangler/ if needed
 ```
+
+`wrangler` is a project devDependency, so `pnpm dev:cf` and
+`pnpm exec wrangler` both resolve the pinned version from
+`node_modules/.bin` — no global install needed. The pin matters: the
+bundled `workerd` must support `compatibility_date` in `wrangler.toml`
+(currently `2026-05-01`), and older global wranglers fail to start the
+worker with a `compatibility date` error.
 
 #### Day-to-day edit-refresh loop
 
