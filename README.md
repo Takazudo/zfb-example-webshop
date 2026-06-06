@@ -45,23 +45,14 @@ string, not a `/order/:id` path param) because zfb dynamic route
 segments require a build-time `paths()` enumeration, and order ids are
 created at runtime.
 
-## Sibling layout
+## Dependencies
 
 This is a **standalone** repo. The zfb packages (`@takazudo/zfb`,
 `@takazudo/zfb-runtime`, `@takazudo/zfb-adapter-cloudflare`) are normal
-npm registry dependencies — no `file:` links. A sibling checkout of the
-`zfb` framework repo is only used to build the `zfb` CLI from source at
-a pinned SHA (the same thing CI does):
-
-```
-~/repos/zfb-ex/
-  zfb/                    <- the zfb framework repo (pinned SHA, CLI source)
-  zfb-example-webshop/    <- this repo
-```
-
-`framework-pins.json` records the exact zfb commit the CLI source build
-uses. Day-to-day builds run the npm-shipped `zfb` binary from
-`node_modules/.bin`.
+npm registry dependencies — no `file:` links. The `zfb` CLI itself ships
+as prebuilt platform binaries via `@takazudo/zfb`'s optionalDependencies,
+so `pnpm install` is the whole setup — no source build, no sibling
+checkout.
 
 ## Local development
 
@@ -70,11 +61,9 @@ uses. Day-to-day builds run the npm-shipped `zfb` binary from
 ```sh
 git clone https://github.com/Takazudo/zfb-example-webshop.git
 cd zfb-example-webshop
-pnpm setup:upstream      # clones + builds the zfb sibling at the pinned SHA
+pnpm install
+pnpm build               # verify the setup end-to-end
 ```
-
-`pnpm setup:upstream` clones the `zfb` sibling at the pinned SHA, builds
-the `zfb` CLI, installs dependencies, and runs `pnpm build` to verify.
 
 ### Day-to-day
 
@@ -163,7 +152,8 @@ owns this repo's `CLOUDFLARE_*` secrets.
 
 Pushing to `main` runs `.github/workflows/deploy.yml`, which:
 
-1. clones the `zfb` sibling inline at the pinned SHA and builds the CLI,
+1. installs dependencies (`pnpm install` — includes the prebuilt `zfb`
+   CLI binary),
 2. runs `pnpm build`,
 3. applies D1 migrations to the remote database
    (`wrangler d1 migrations apply webshop --remote`),
@@ -172,16 +162,11 @@ Pushing to `main` runs `.github/workflows/deploy.yml`, which:
 
 ## zfb upgrade procedure
 
-Two things move together when bumping zfb:
-
 1. Bump the npm deps — set `@takazudo/zfb`, `@takazudo/zfb-runtime`,
    and `@takazudo/zfb-adapter-cloudflare` in `package.json` to the new
    version and run `pnpm install`.
-2. Edit `framework-pins.json` — set `zfb.sha` to the matching zfb
-   `main` commit SHA (find it with
-   `git -C ../zfb log --first-parent --oneline main | head`).
-3. Verify: `pnpm build && pnpm typecheck`, then commit and push.
-   CI re-clones zfb at the new SHA and re-deploys.
+2. Verify: `pnpm build && pnpm typecheck`, then commit and push.
+   CI re-installs and re-deploys.
 
 If the bump crosses a zfb release that changes `@takazudo/zfb-adapter-cloudflare`,
 manually re-test the catalogue (`/`) and `/cart` after deploy — those SSR-D1
