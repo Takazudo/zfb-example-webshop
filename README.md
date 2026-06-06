@@ -142,8 +142,8 @@ owns this repo's `CLOUDFLARE_*` secrets.
 - **Create once, migrate forever.** `wrangler d1 create` runs exactly
   once per database (done via the one-time `d1-bootstrap.yml` workflow,
   since `d1 create` needs the account credentials that only exist in
-  CI). CI never re-creates — `deploy.yml` only runs
-  `wrangler d1 migrations apply webshop --remote`.
+  CI). CI never re-creates — `deploy.yml` only runs migrations
+  (`webshop` on push to main, `webshop-preview` on pull_request).
 - **Preview vs production** get separate databases (`webshop` and
   `webshop-preview`) so a preview branch never mutates production data.
 - Schema changes are new numbered files under `migrations/`.
