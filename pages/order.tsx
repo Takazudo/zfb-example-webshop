@@ -12,8 +12,8 @@ export const prerender = false;
 /**
  * Order confirmation page — `/order?id=<n>`.
  *
- * A query-string id (not a `/order/:id` path param) is deliberate: at
- * the pinned zfb SHA, dynamic route segments (`[id].tsx`) are only
+ * A query-string id (not a `/order/:id` path param) is deliberate: in
+ * current zfb, dynamic route segments (`[id].tsx`) are only
  * expanded for SSG via `paths()` and never reach the SSR worker, so a
  * `prerender = false` route must be a static path.
  *
