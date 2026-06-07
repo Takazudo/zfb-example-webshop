@@ -162,9 +162,17 @@ Pushing to `main` runs `.github/workflows/deploy.yml`, which:
 
 ## zfb upgrade procedure
 
+In a Claude Code session, use the `l-handle-zfb-update` project skill
+(`.claude/skills/l-handle-zfb-update/SKILL.md`) — it resolves the latest
+`next` dist-tag, reviews every intermediate upstream release note BEFORE
+bumping, bumps all three zfb packages in lockstep with exact pins, and
+verifies with a clean build.
+
+Manual fallback summary:
+
 1. Bump the npm deps — set `@takazudo/zfb`, `@takazudo/zfb-runtime`,
    and `@takazudo/zfb-adapter-cloudflare` in `package.json` to the new
-   version and run `pnpm install`.
+   version (all three on the SAME version) and run `pnpm install`.
 2. Verify: `pnpm build && pnpm typecheck`, then commit and push.
    CI re-installs and re-deploys.
 
