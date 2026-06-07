@@ -99,7 +99,7 @@ Flag anything that touches a surface this project uses:
 | `defineConfig` schema (`@takazudo/zfb/config`) | `zfb.config.ts` — `framework: "preact"`, `base`, `tailwind.enabled`, `adapter`. No `collections`: the catalogue lives in D1 |
 | Cloudflare adapter (`@takazudo/zfb-adapter-cloudflare`) | `getCloudflareContext<Env>()` imported by every page under `pages/`; emits `dist/_worker.js` + `dist/_zfb_inner.mjs`; `wrangler.toml` contract (`nodejs_compat`, `pages_build_output_dir`, `DB` binding → `env.DB`) |
 | SSR page contract (`prerender = false`, required `frontmatter` export, pages returning `Response`) | every file under `pages/` (all routes are SSR); `lib/render.ts` (`htmlResponse`) |
-| Islands runtime (`@takazudo/zfb-runtime`) | not used — no islands in this project. Keep the package version-locked with zfb anyway |
+| Runtime page router (`@takazudo/zfb-runtime`) | zfb bundles the runtime's `createPageRouter` into `dist/_zfb_inner.mjs` as the Worker fetch handler — every `prerender = false` route here dispatches through it, so review router / `Response`-contract changes. Islands / client-router features are unused (no islands in this project) |
 | Tailwind / CSS pipeline | `styles/global.css` (Tailwind v4 `@theme`); emitted `dist/assets/styles-<hash>.css`; `scripts/stable-css.mjs` asserts exactly ONE `styles-*.css` and copies it to `assets/app.css`; `layouts/shop-layout.tsx` hard-codes `/assets/app.css` as the consumer |
 | CLI commands (`zfb dev/build/preview/check`) | `package.json` scripts (`dev`, `build`, `preview`, `typecheck`, `dev:cf`) |
 | Documented behavior (commands, build output shape) | `README.md` hard-codes the command table, the "no static HTML, only a worker" architecture description, and the upgrade procedure |
