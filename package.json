@@ -18,9 +18,9 @@
     "dev:cf": "pnpm dev:cf:setup && concurrently --names 'wrangler,watch' --kill-others 'wrangler pages dev dist/ --port 8788' \"chokidar 'pages/**/*.tsx' 'components/**/*.tsx' 'layouts/**/*.tsx' 'lib/**/*.ts' 'styles/**/*.css' --command 'pnpm build' --initial false --debounce 200\""
   },
   "dependencies": {
-    "@takazudo/zfb": "0.1.0-next.44",
-    "@takazudo/zfb-adapter-cloudflare": "0.1.0-next.44",
-    "@takazudo/zfb-runtime": "0.1.0-next.44",
+    "@takazudo/zfb": "0.1.0-next.52",
+    "@takazudo/zfb-adapter-cloudflare": "0.1.0-next.52",
+    "@takazudo/zfb-runtime": "0.1.0-next.52",
     "preact": "^10.22.0",
     "preact-render-to-string": "^6.5.0"
   },
