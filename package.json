@@ -15,7 +15,7 @@
     "typecheck": "zfb check",
     "//cf": "Binding-realistic Cloudflare dev loop (D1 + wrangler). See README.",
     "dev:cf:setup": "wrangler d1 migrations apply webshop --local && pnpm build",
-    "dev:cf": "pnpm dev:cf:setup && concurrently --names 'wrangler,watch' --kill-others 'wrangler pages dev dist/ --port 8788' \"chokidar 'pages/**/*.tsx' 'components/**/*.tsx' 'layouts/**/*.tsx' 'lib/**/*.ts' 'styles/**/*.css' --command 'pnpm build' --initial false --debounce 200\""
+    "dev:cf": "pnpm dev:cf:setup && concurrently --names 'wrangler,watch' --kill-others 'wrangler dev --port 8788' \"chokidar 'pages/**/*.tsx' 'components/**/*.tsx' 'layouts/**/*.tsx' 'lib/**/*.ts' 'styles/**/*.css' --command 'pnpm build' --initial false --debounce 200\""
   },
   "dependencies": {
     "@takazudo/zfb": "0.1.0-next.74",

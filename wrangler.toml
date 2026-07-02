@@ -6,11 +6,28 @@ compatibility_date = "2026-05-01"
 # the Worker fails to start with `No such module "node:async_hooks"`.
 compatibility_flags = ["nodejs_compat"]
 
-# MANDATORY. Without `pages_build_output_dir`, Cloudflare Pages treats
-# this as a project with no Pages config: it IGNORES the
-# [[d1_databases]] bindings below, `env.DB` is undefined at runtime, and
-# every SSR route 500s with NO build error. Do not omit this line.
-pages_build_output_dir = "dist"
+# Workers Static Assets deploy model (migrated from Cloudflare Pages
+# advanced mode — see issue #23). `main` is the SSR Worker the zfb
+# adapter emits; `[assets]` serves the static build output (the compiled
+# CSS) alongside it. The adapter emits `dist/.assetsignore` (excluding
+# `_worker.js` / `_zfb_inner.mjs`) so the Worker source is never served
+# as a public asset.
+main = "./dist/_worker.js"
+
+# Production is reachable at `zfb-example-webshop.<account>.workers.dev`
+# (no custom domain). `workers_dev` is an inheritable key, so the
+# `[env.preview]` worker below also gets its own workers.dev URL.
+workers_dev = true
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+# SSR-only app: no static index.html exists, so an unmatched path must
+# fall through to the Worker, not to Cloudflare's asset 404. With
+# `run_worker_first = false`, real static assets (the CSS) are served
+# directly and everything else invokes the Worker.
+not_found_handling = "404-page"
+run_worker_first = false
 
 # Production D1 database. The binding name `DB` is what becomes `env.DB`
 # inside an SSR route. `database_id` is produced by `wrangler d1 create`
@@ -21,8 +38,14 @@ binding = "DB"
 database_name = "webshop"
 database_id = "c7596e55-1342-4eeb-a662-e6bd9f0bf720"
 
-# Preview deploys get their OWN database so a preview branch never
-# mutates production shop data.
+# Preview environment. Unlike Pages' implicit per-branch preview scoping,
+# a Workers named environment deploys as a SEPARATE Worker
+# (`zfb-example-webshop-preview`), so PRs never touch the production
+# Worker or its bindings. `main`, `[assets]`, `compatibility_flags`, and
+# `workers_dev` are inheritable and carry over from the top level;
+# `d1_databases` is NON-inheritable, so this block is what binds the
+# preview Worker to its OWN database (`webshop-preview`) — the isolation
+# guarantee that keeps a PR from mutating production shop data.
 [[env.preview.d1_databases]]
 binding = "DB"
 database_name = "webshop-preview"
