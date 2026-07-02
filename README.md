@@ -5,7 +5,7 @@ A small, polished **webshop demo** built with
 — Tailwind v4 styling, server-side rendered routes, and a shopping cart
 + accounts backed by **Cloudflare D1**.
 
-**Live:** https://zfb-example-webshop.CF_SUBDOMAIN.workers.dev/ — the
+**Live:** https://zfb-example-webshop.takazudo.workers.dev/ — the
 production Cloudflare Worker. (The old `https://zfb-example-webshop.pages.dev/`
 Pages URL is being retired — see [Deployment](#deployment).)
 
@@ -165,7 +165,7 @@ files are never exposed as public assets.
 - **Push to `main` → production.** Installs deps, `pnpm build`, applies D1
   migrations to `webshop` (`wrangler d1 migrations apply webshop --remote`),
   then `wrangler deploy` — the production Worker `zfb-example-webshop`,
-  reachable at `https://zfb-example-webshop.CF_SUBDOMAIN.workers.dev/`.
+  reachable at `https://zfb-example-webshop.takazudo.workers.dev/`.
 - **Pull request → isolated preview.** Same build, but migrates the
   **separate** `webshop-preview` D1 database
   (`wrangler d1 migrations apply webshop-preview --env preview --remote`)
