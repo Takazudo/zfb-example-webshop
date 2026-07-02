@@ -1,17 +1,24 @@
-# Canonical zfb-demo deploy workflow (S4 standalone-shape template).
+# Cloudflare Workers Static Assets deploy workflow.
 #
-# PARAMETERIZE per demo before committing into the demo repo:
-#   - Replace every occurrence of  zfb-example-webshop  with the Cloudflare
-#     Pages project name (also the demo repo name):
-#       zfb-example-blog | zfb-example-corporate-website | zfb-example-webshop
-#   - The webshop (#316 / S7) additionally needs a D1 migrate step — see
-#     the README "Webshop D1 addendum" section. Insert it AFTER "Build" and
-#     BEFORE "Deploy to Cloudflare Pages".
+# Migrated from Cloudflare Pages advanced mode (issue #23). The zfb
+# Cloudflare adapter emits a Workers-ready `dist/` (SSR `dist/_worker.js`
+# + `dist/.assetsignore` that hides the worker source from asset
+# serving), so deploy is a plain `wrangler deploy` driven by
+# `wrangler.toml`.
+#
+# Event-aware two-environment model (mirrors wrangler.toml):
+#   - push to main  -> production Worker `zfb-example-webshop`
+#                      (top-level config, D1 `webshop`)
+#   - pull_request  -> preview Worker `zfb-example-webshop-preview`
+#                      (`--env preview`, D1 `webshop-preview`)
+# A Workers named environment deploys as a SEPARATE Worker (unlike Pages'
+# implicit per-branch previews), so a PR never touches the production
+# Worker or its database.
 #
 # The zfb CLI ships as prebuilt platform binaries via the @takazudo/zfb
 # npm package (optionalDependencies select the right binary per OS/arch),
 # so a plain `pnpm install` provides everything — no source build needed.
-name: Deploy to Cloudflare Pages
+name: Deploy to Cloudflare Workers
 
 on:
   push:
@@ -55,19 +62,19 @@ jobs:
       - name: Build
         run: pnpm build
 
-      # === WEBSHOP-ONLY (S7 / #316) D1 MIGRATE STEP ===
+      # === D1 MIGRATE (remote) ===
       # Apply numbered migrations/*.sql to the remote D1 database before
       # the deploy. Idempotent: wrangler tracks applied migrations in the
       # d1_migrations table, so a re-run applies only new files.
       #
-      # Event-aware target (see #4): pull_request runs migrate the PREVIEW
-      # database (`webshop-preview`), push-to-main runs migrate PRODUCTION
-      # (`webshop`). This mirrors `wrangler.toml`, which binds preview
-      # deploys to their own DB so a PR never mutates production shop data.
-      # The preview DB lives under `[env.preview]`, so it is only resolvable
-      # with `--env preview`; without it wrangler errors "Couldn't find a
-      # D1 DB with the name or binding 'webshop-preview'". Production lives
-      # at top-level config — no `--env` (there is no `[env.production]`).
+      # Event-aware target: pull_request migrates the PREVIEW database
+      # (`webshop-preview`), push-to-main migrates PRODUCTION (`webshop`).
+      # This mirrors `wrangler.toml`, which binds the preview Worker to its
+      # own DB so a PR never mutates production shop data. The preview DB
+      # lives under `[env.preview]`, so it is only resolvable with
+      # `--env preview`; without it wrangler errors "Couldn't find a D1 DB
+      # with the name or binding 'webshop-preview'". Production lives at
+      # top-level config — no `--env` (there is no `[env.production]`).
       - name: Apply D1 migrations (remote)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -79,88 +86,97 @@ jobs:
             pnpm exec wrangler d1 migrations apply webshop --remote
           fi
 
-      - name: Compute deploy branch slug
-        id: branch
-        env:
-          GITHUB_HEAD_REF_VAL: ${{ github.head_ref }}
-          GITHUB_REF_NAME_VAL: ${{ github.ref_name }}
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            # Cloudflare Pages branch names cannot contain slashes; replace with hyphens.
-            DEPLOY_BRANCH=$(echo "${GITHUB_HEAD_REF_VAL}" | tr '/' '-')
-          else
-            DEPLOY_BRANCH="main"
-          fi
-          echo "deploy_branch=${DEPLOY_BRANCH}" >> "$GITHUB_OUTPUT"
-
-      - name: Ensure Cloudflare Pages project exists
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          # Idempotent: create on first run, no-op on subsequent runs.
-          # wrangler@4 no longer auto-creates the project on `pages deploy`.
-          out=$(pnpm exec wrangler pages project create zfb-example-webshop \
-            --production-branch=main 2>&1) && rc=0 || rc=$?
-          echo "$out"
-          if [ "$rc" -eq 0 ]; then
-            echo "Project created."
-          elif echo "$out" | grep -qE "already exists|8000077|duplicate"; then
-            echo "Project already exists — continuing."
-          else
-            echo "Project create failed with unexpected error."
-            exit "$rc"
-          fi
-
-      - name: Deploy to Cloudflare Pages
+      # === DEPLOY WORKER ===
+      # pull_request deploys the preview Worker (`--env preview` →
+      # `zfb-example-webshop-preview`); push-to-main deploys production
+      # (`zfb-example-webshop`). `wrangler deploy` creates the Worker on
+      # first run (no separate "ensure project exists" step, unlike Pages).
+      # set +e is used only so the deploy output is always echoed for
+      # debugging; a non-zero wrangler exit still fails the step.
+      - name: Deploy Worker
         id: deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          DEPLOY_BRANCH: ${{ steps.branch.outputs.deploy_branch }}
         run: |
-          for attempt in 1 2 3; do
-            echo "Deploy attempt $attempt/3..."
-            if pnpm exec wrangler pages deploy dist \
-              --project-name=zfb-example-webshop \
-              --branch="${DEPLOY_BRANCH}" \
-              --commit-hash="${GITHUB_SHA}" \
-              --commit-message="Deploy: ${GITHUB_SHA}"; then
-              echo "Deploy succeeded on attempt $attempt"
-              if [ "${DEPLOY_BRANCH}" = "main" ]; then
-                echo "deploy_url=https://zfb-example-webshop.pages.dev/" >> "$GITHUB_OUTPUT"
-              else
-                echo "deploy_url=https://${DEPLOY_BRANCH}.zfb-example-webshop.pages.dev/" >> "$GITHUB_OUTPUT"
-              fi
-              exit 0
-            fi
-            if [ "$attempt" -lt 3 ]; then
-              echo "Deploy failed, retrying in 150 seconds..."
-              sleep 150
-            fi
-          done
-          echo "Deploy failed after 3 attempts"
-          exit 1
+          set +e
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            DEPLOY_OUTPUT=$(pnpm exec wrangler deploy --env preview 2>&1)
+          else
+            # `--env=""` explicitly targets the top-level (production) config.
+            # Because a named environment ([env.preview]) exists, a bare
+            # `wrangler deploy` warns about an unspecified environment; the
+            # empty-string form is wrangler's documented way to select top-level.
+            DEPLOY_OUTPUT=$(pnpm exec wrangler deploy --env="" 2>&1)
+          fi
+          STATUS=$?
+          set -e
+          echo "$DEPLOY_OUTPUT"
+          if [ "$STATUS" -ne 0 ]; then
+            echo "wrangler deploy failed with status $STATUS" >&2
+            exit "$STATUS"
+          fi
+          # `|| true`: grep exits 1 when no URL is present (e.g. workers.dev
+          # not yet enabled on a first deploy). Under the runner's pipefail
+          # shell that would fail this step even though the deploy succeeded.
+          DEPLOY_URL=$(echo "$DEPLOY_OUTPUT" | grep -oE 'https://[a-zA-Z0-9._-]+\.workers\.dev' | head -1 || true)
+          echo "deploy_url=${DEPLOY_URL}" >> "$GITHUB_OUTPUT"
 
-      - name: Comment on PR
+      # === ENABLE workers.dev SUBDOMAIN (idempotent) ===
+      # Makes the deployed Worker reachable at
+      # `<script>.<account>.workers.dev`. Event-aware script name so a PR
+      # enables it for the preview Worker, main for production. Tolerant:
+      # error code 10056 means "already configured".
+      - name: Enable workers.dev subdomain (idempotent)
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            SCRIPT_NAME="zfb-example-webshop-preview"
+          else
+            SCRIPT_NAME="zfb-example-webshop"
+          fi
+          RESPONSE=$(curl -sS -X POST \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${SCRIPT_NAME}/subdomain" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{"enabled":true}')
+          echo "$RESPONSE"
+          # code 10056 = already configured — treat as success
+          CODE=$(echo "$RESPONSE" | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8');const j=JSON.parse(d);console.log((j.errors||[]).map(e=>e.code).join(','))")
+          if [ -n "$CODE" ] && [ "$CODE" != "10056" ]; then
+            echo "Unexpected error code(s): $CODE" >&2
+            exit 1
+          fi
+
+      # === STICKY PR PREVIEW COMMENT ===
+      # Post/update a single comment pointing at the preview Worker URL.
+      - name: Upsert sticky PR preview comment
         if: github.event_name == 'pull_request' && steps.deploy.outcome == 'success'
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
-          DEPLOY_URL: ${{ steps.deploy.outputs.deploy_url }}
-          DEPLOY_BRANCH: ${{ steps.branch.outputs.deploy_branch }}
+          PREVIEW_URL: ${{ steps.deploy.outputs.deploy_url }}
         with:
+          # github-token passed explicitly: implicit detection can 401 with
+          # "Bad credentials" on SHA-pinned action runs.
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const deployUrl = process.env.DEPLOY_URL;
-            const deployBranch = process.env.DEPLOY_BRANCH;
-            const marker = '<!-- cf-preview-branch -->';
-            const body = `${marker}\n### Preview deployed\n\nBranch \`${deployBranch}\` is live at: ${deployUrl}\n\n_Updated for commit \`${context.sha.substring(0, 7)}\`._`;
+            const marker = '<!-- cf-workers-preview-pr -->';
+            const previewUrl = process.env.PREVIEW_URL;
+            const shortSha = context.sha.substring(0, 7);
+            const body = previewUrl
+              ? `${marker}\n### Cloudflare Workers preview\n\nPreview Worker \`zfb-example-webshop-preview\` is live at: ${previewUrl}\n\n_Deployed against the isolated \`webshop-preview\` D1 database — never touches production shop data. Updated for commit \`${shortSha}\`._`
+              : `${marker}\n### Cloudflare Workers preview\n\n⏳ Preview Worker deployed, but the workers.dev URL could not be parsed from the deploy output — check the "Deploy Worker" step logs.\n\n_Updated for commit \`${shortSha}\`._`;
 
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
+              per_page: 100,
             });
-            const existing = comments.find((c) => c.body && c.body.startsWith(marker));
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
 
             if (existing) {
               await github.rest.issues.updateComment({

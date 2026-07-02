@@ -5,7 +5,9 @@ A small, polished **webshop demo** built with
 — Tailwind v4 styling, server-side rendered routes, and a shopping cart
 + accounts backed by **Cloudflare D1**.
 
-**Live:** https://zfb-example-webshop.pages.dev/
+**Live:** https://zfb-example-webshop.takazudo.workers.dev/ — the
+production Cloudflare Worker. (The old `https://zfb-example-webshop.pages.dev/`
+Pages URL is being retired — see [Deployment](#deployment).)
 
 It demonstrates the parts of zfb a content-only demo cannot: SSR routes
 (`prerender = false`) that read a Cloudflare Worker binding, email +
@@ -35,7 +37,7 @@ client-side JavaScript**. All interactivity is server round-trips.
 | Worker binding | `env.DB` (D1) read via `getCloudflareContext<Env>()`           |
 | Adapter        | `@takazudo/zfb-adapter-cloudflare` → emits `dist/_worker.js`   |
 | Data           | Cloudflare D1 (`migrations/0001_init.sql`, `0002_seed_*.sql`)  |
-| Deploy         | Cloudflare Pages via `.github/workflows/deploy.yml`            |
+| Deploy         | Cloudflare Workers (Static Assets) via `.github/workflows/deploy.yml` |
 
 Note: all routes are `prerender = false` (the catalogue reads live
 prices from D1), so the build produces no static HTML pages — only the
@@ -76,7 +78,7 @@ pnpm typecheck           # zfb check (tsc --noEmit)
 
 The cart and accounts read `env.DB`, so they need a real Worker
 binding. `zfb dev` does **not** provide one — use the
-`wrangler pages dev`-based loop below for any work that touches D1.
+`wrangler dev`-based loop below for any work that touches D1.
 
 #### One-time setup
 
@@ -101,8 +103,9 @@ pnpm dev:cf
 That single command applies migrations, runs an initial `pnpm build`,
 then starts two processes side-by-side via `concurrently`:
 
-- `wrangler pages dev dist/ --port 8788` — serves the built worker
-  against the local D1, auto-reloads when `dist/` changes.
+- `wrangler dev --port 8788` — reads `wrangler.toml` (`main` +
+  `[assets]`), serves the built worker against the local D1, and
+  auto-reloads when `dist/` changes.
 - `chokidar` — watches `pages/`, `components/`, `layouts/`, `lib/`,
   `styles/`; re-runs `pnpm build` on save (200ms debounce).
 
@@ -111,7 +114,7 @@ processes cleanly.
 
 > **Do NOT run `pnpm dev` and `pnpm dev:cf` at the same time.**
 > `pnpm dev`'s `predev` step (`rm -rf dist .zfb .zfb-build`) wipes the
-> `dist/` directory that `wrangler pages dev` is actively serving,
+> `dist/` directory that `wrangler dev` is actively serving,
 > putting wrangler into a degraded state where rebuilds stop
 > triggering reloads. Pick one loop at a time. If you accidentally
 > ran both, stop everything, run `pnpm build`, and restart
@@ -119,7 +122,7 @@ processes cleanly.
 
 #### Requirements
 
-`wrangler pages dev` reads `compatibility_flags = ["nodejs_compat"]`
+`wrangler dev` reads `compatibility_flags = ["nodejs_compat"]`
 from `wrangler.toml` — that flag is **required**, because the zfb
 Cloudflare adapter uses `node:async_hooks` to thread `env` into SSR
 routes.
@@ -150,15 +153,36 @@ owns this repo's `CLOUDFLARE_*` secrets.
 
 ## Deployment
 
-Pushing to `main` runs `.github/workflows/deploy.yml`, which:
+This repo deploys to **Cloudflare Workers Static Assets** (migrated from
+Cloudflare Pages advanced mode — see issue #23). `wrangler.toml` sets
+`main = "./dist/_worker.js"` (the SSR Worker the zfb adapter emits) and an
+`[assets]` block that serves the static build output (the compiled CSS)
+alongside it. The adapter emits `dist/.assetsignore` so the Worker source
+files are never exposed as public assets.
 
-1. installs dependencies (`pnpm install` — includes the prebuilt `zfb`
-   CLI binary),
-2. runs `pnpm build`,
-3. applies D1 migrations to the remote database
-   (`wrangler d1 migrations apply webshop --remote`),
-4. deploys `dist/` to the `zfb-example-webshop` Cloudflare Pages
-   project.
+`.github/workflows/deploy.yml` is **event-aware**:
+
+- **Push to `main` → production.** Installs deps, `pnpm build`, applies D1
+  migrations to `webshop` (`wrangler d1 migrations apply webshop --remote`),
+  then `wrangler deploy` — the production Worker `zfb-example-webshop`,
+  reachable at `https://zfb-example-webshop.takazudo.workers.dev/`.
+- **Pull request → isolated preview.** Same build, but migrates the
+  **separate** `webshop-preview` D1 database
+  (`wrangler d1 migrations apply webshop-preview --env preview --remote`)
+  and deploys with `wrangler deploy --env preview` — a **separate** Worker
+  `zfb-example-webshop-preview` bound to `webshop-preview`. Because a
+  Workers named environment is its own Worker (unlike Pages' implicit
+  per-branch previews), **a PR never touches the production Worker or its
+  database**. A sticky PR comment links the preview URL.
+
+Both deploys enable the Worker's `workers.dev` subdomain idempotently, so
+the site is reachable without a custom domain.
+
+> **Retiring the old Pages project.** The previous
+> `https://zfb-example-webshop.pages.dev/` URL and its Cloudflare Pages
+> project are no longer deployed to, but deleting the Pages project (and
+> its preview branches) must be done manually in the Cloudflare dashboard
+> — CI intentionally does not delete it.
 
 ## zfb upgrade procedure
 
