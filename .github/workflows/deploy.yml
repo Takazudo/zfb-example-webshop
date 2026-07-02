@@ -8,12 +8,19 @@
 #
 # Event-aware two-environment model (mirrors wrangler.toml):
 #   - push to main  -> production Worker `zfb-example-webshop`
-#                      (top-level config, D1 `webshop`)
-#   - pull_request  -> preview Worker `zfb-example-webshop-preview`
-#                      (`--env preview`, D1 `webshop-preview`)
-# A Workers named environment deploys as a SEPARATE Worker (unlike Pages'
-# implicit per-branch previews), so a PR never touches the production
-# Worker or its database.
+#                      (`wrangler deploy`, top-level config, D1 `webshop`)
+#   - pull_request  -> per-PR aliased VERSION of the preview Worker
+#                      `zfb-example-webshop-preview` (`wrangler versions
+#                      upload --env preview --preview-alias pr-<N>`,
+#                      D1 `webshop-preview`)
+# The preview path uploads a version instead of deploying (issue #25): a
+# plain `wrangler deploy --env preview` always overwrites the single
+# shared preview Worker, so two concurrent PRs clobber each other (last
+# deploy wins). A per-PR-aliased version instead yields an independent,
+# stable URL (`pr-<N>-zfb-example-webshop-preview.<subdomain>.workers.dev`)
+# and does NOT change the Worker's live traffic. The version still inherits
+# `[env.preview]` bindings, so it stays bound to the `webshop-preview` D1 —
+# a PR never touches the production Worker or its database.
 #
 # The zfb CLI ships as prebuilt platform binaries via the @takazudo/zfb
 # npm package (optionalDependencies select the right binary per OS/arch),
@@ -86,29 +93,28 @@ jobs:
             pnpm exec wrangler d1 migrations apply webshop --remote
           fi
 
-      # === DEPLOY WORKER ===
-      # pull_request deploys the preview Worker (`--env preview` →
-      # `zfb-example-webshop-preview`); push-to-main deploys production
-      # (`zfb-example-webshop`). `wrangler deploy` creates the Worker on
-      # first run (no separate "ensure project exists" step, unlike Pages).
+      # === DEPLOY PRODUCTION WORKER (push to main) ===
+      # push-to-main deploys production (`zfb-example-webshop`, top-level
+      # config). `wrangler deploy` creates the Worker on first run (no
+      # separate "ensure project exists" step, unlike Pages). PR previews
+      # are NOT deployed here — see "Upload PR preview version" below, which
+      # uploads a per-PR aliased version so concurrent PRs don't overwrite a
+      # shared preview Worker (issue #25).
       # set +e is used only so the deploy output is always echoed for
       # debugging; a non-zero wrangler exit still fails the step.
-      - name: Deploy Worker
+      - name: Deploy production Worker
         id: deploy
+        if: github.event_name != 'pull_request'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set +e
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            DEPLOY_OUTPUT=$(pnpm exec wrangler deploy --env preview 2>&1)
-          else
-            # `--env=""` explicitly targets the top-level (production) config.
-            # Because a named environment ([env.preview]) exists, a bare
-            # `wrangler deploy` warns about an unspecified environment; the
-            # empty-string form is wrangler's documented way to select top-level.
-            DEPLOY_OUTPUT=$(pnpm exec wrangler deploy --env="" 2>&1)
-          fi
+          # `--env=""` explicitly targets the top-level (production) config.
+          # Because a named environment ([env.preview]) exists, a bare
+          # `wrangler deploy` warns about an unspecified environment; the
+          # empty-string form is wrangler's documented way to select top-level.
+          DEPLOY_OUTPUT=$(pnpm exec wrangler deploy --env="" 2>&1)
           STATUS=$?
           set -e
           echo "$DEPLOY_OUTPUT"
@@ -122,24 +128,103 @@ jobs:
           DEPLOY_URL=$(echo "$DEPLOY_OUTPUT" | grep -oE 'https://[a-zA-Z0-9._-]+\.workers\.dev' | head -1 || true)
           echo "deploy_url=${DEPLOY_URL}" >> "$GITHUB_OUTPUT"
 
-      # === ENABLE workers.dev SUBDOMAIN (idempotent) ===
-      # Makes the deployed Worker reachable at
-      # `<script>.<account>.workers.dev`. Event-aware script name so a PR
-      # enables it for the preview Worker, main for production. Tolerant:
-      # error code 10056 means "already configured".
-      - name: Enable workers.dev subdomain (idempotent)
+      # === ENABLE workers.dev + PREVIEW URLs on the preview Worker ===
+      # MUST run before the version upload below. `wrangler versions upload
+      # --preview-alias` only emits the alias URL when the Worker's
+      # subdomain has `previews_enabled` = true: in wrangler 4.98.0 the
+      # command fetches `.../scripts/<name>/subdomain` and, if
+      # `previews_enabled` is false, skips computing the preview URL
+      # entirely — so the sticky comment would stay "pending" forever and
+      # no working preview would exist. `workers_dev = true` in
+      # wrangler.toml only controls the deployed Worker's `enabled`
+      # (workers.dev) flag; version PREVIEW URLs are the SEPARATE
+      # `previews_enabled` toggle, which a plain `{"enabled":true}` POST
+      # does not set — hence this explicit call.
+      # Tolerant (continue-on-error): 10056 = already configured; on a
+      # brand-new preview Worker the script doesn't exist yet and this 404s
+      # harmlessly until a first upload creates it.
+      - name: Enable preview URLs on preview Worker
+        if: github.event_name == 'pull_request'
         continue-on-error: true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            SCRIPT_NAME="zfb-example-webshop-preview"
-          else
-            SCRIPT_NAME="zfb-example-webshop"
-          fi
           RESPONSE=$(curl -sS -X POST \
-            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${SCRIPT_NAME}/subdomain" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/zfb-example-webshop-preview/subdomain" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{"enabled":true,"previews_enabled":true}')
+          echo "$RESPONSE"
+          # code 10056 = already configured — treat as success
+          CODE=$(echo "$RESPONSE" | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8');const j=JSON.parse(d);console.log((j.errors||[]).map(e=>e.code).join(','))")
+          if [ -n "$CODE" ] && [ "$CODE" != "10056" ]; then
+            echo "Unexpected error code(s): $CODE" >&2
+            exit 1
+          fi
+
+      # === UPLOAD PR PREVIEW VERSION (per-PR alias) ===
+      # pull_request uploads a per-PR aliased VERSION of the preview Worker
+      # instead of deploying the shared `zfb-example-webshop-preview` Worker
+      # (issue #25). `wrangler versions upload --preview-alias pr-<N>`
+      # publishes a version that is NOT promoted to live traffic and gets
+      # its own stable URL
+      # (`pr-<N>-zfb-example-webshop-preview.<subdomain>.workers.dev`), so
+      # concurrent PRs get independent previews that never clobber each
+      # other. `--env preview` makes the version inherit `[env.preview]`
+      # bindings, so it reads the isolated `webshop-preview` D1 — NEVER the
+      # production `webshop` database. (Verified against wrangler 4.98.0 that
+      # `--env` and `--preview-alias` compose and the binding resolves to
+      # `webshop-preview`.)
+      #
+      # Tolerant by design (continue-on-error + no hard exit): the upload
+      # needs the `zfb-example-webshop-preview` Worker to already exist with
+      # its workers.dev subdomain enabled. It does today (created during
+      # PR #24), but before that bootstrap the upload can legitimately fail —
+      # treat it as a graceful no-op (the sticky comment posts a "pending"
+      # note) rather than reddening the PR check.
+      - name: Upload PR preview version
+        id: preview
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          PREVIEW_ALIAS="pr-${PR_NUMBER}"
+          set +e
+          UPLOAD_OUTPUT=$(pnpm exec wrangler versions upload --env preview --preview-alias "$PREVIEW_ALIAS" 2>&1)
+          STATUS=$?
+          set -e
+          echo "$UPLOAD_OUTPUT"
+          # `|| true`: grep exits 1 when no URL is present; under the runner's
+          # pipefail shell that would abort the step before the warning below.
+          # Prefer the alias-prefixed URL; fall back to any workers.dev URL.
+          PREVIEW_URL=$(echo "$UPLOAD_OUTPUT" | grep -oE "https://${PREVIEW_ALIAS}-[a-zA-Z0-9._-]+\.workers\.dev[^ ]*" | head -1 || true)
+          if [ -z "$PREVIEW_URL" ]; then
+            PREVIEW_URL=$(echo "$UPLOAD_OUTPUT" | grep -oE 'https://[a-zA-Z0-9._-]+\.workers\.dev[^ ]*' | head -1 || true)
+          fi
+          if [ "$STATUS" -ne 0 ] || [ -z "$PREVIEW_URL" ]; then
+            echo "::warning::PR preview version upload unavailable (worker missing or workers.dev subdomain disabled). Status=$STATUS"
+          fi
+          echo "preview_url=${PREVIEW_URL}" >> "$GITHUB_OUTPUT"
+
+      # === ENABLE workers.dev SUBDOMAIN (production, idempotent) ===
+      # Makes the production Worker reachable at
+      # `zfb-example-webshop.<account>.workers.dev`. Push-to-main only — PR
+      # previews enable their subdomain + preview URLs in the dedicated
+      # pre-upload step above. Tolerant: error code 10056 means "already
+      # configured".
+      - name: Enable workers.dev subdomain (production, idempotent)
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          RESPONSE=$(curl -sS -X POST \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/zfb-example-webshop/subdomain" \
             -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             -H "Content-Type: application/json" \
             -d '{"enabled":true}')
@@ -152,12 +237,15 @@ jobs:
           fi
 
       # === STICKY PR PREVIEW COMMENT ===
-      # Post/update a single comment pointing at the preview Worker URL.
+      # Post/update a single comment pointing at the per-PR preview version URL.
+      # Always runs on pull_request (no step-outcome guard): the upload step
+      # is continue-on-error, so an empty preview_url just yields the
+      # "pending" body rather than skipping the comment.
       - name: Upsert sticky PR preview comment
-        if: github.event_name == 'pull_request' && steps.deploy.outcome == 'success'
+        if: github.event_name == 'pull_request'
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
-          PREVIEW_URL: ${{ steps.deploy.outputs.deploy_url }}
+          PREVIEW_URL: ${{ steps.preview.outputs.preview_url }}
         with:
           # github-token passed explicitly: implicit detection can 401 with
           # "Bad credentials" on SHA-pinned action runs.
@@ -165,10 +253,11 @@ jobs:
           script: |
             const marker = '<!-- cf-workers-preview-pr -->';
             const previewUrl = process.env.PREVIEW_URL;
+            const prNumber = context.issue.number;
             const shortSha = context.sha.substring(0, 7);
             const body = previewUrl
-              ? `${marker}\n### Cloudflare Workers preview\n\nPreview Worker \`zfb-example-webshop-preview\` is live at: ${previewUrl}\n\n_Deployed against the isolated \`webshop-preview\` D1 database — never touches production shop data. Updated for commit \`${shortSha}\`._`
-              : `${marker}\n### Cloudflare Workers preview\n\n⏳ Preview Worker deployed, but the workers.dev URL could not be parsed from the deploy output — check the "Deploy Worker" step logs.\n\n_Updated for commit \`${shortSha}\`._`;
+              ? `${marker}\n### Cloudflare Workers preview\n\nPer-PR preview version is live at: ${previewUrl}\n\n_Uploaded as an aliased version (\`pr-${prNumber}\`) of the \`zfb-example-webshop-preview\` Worker — an independent per-PR URL, so concurrent PRs no longer clobber each other. Bound to the isolated \`webshop-preview\` D1 database — never touches production shop data. Updated for commit \`${shortSha}\`._`
+              : `${marker}\n### Cloudflare Workers preview\n\n⏳ Preview version uploaded, but the workers.dev URL could not be parsed — check the "Upload PR preview version" step logs. The preview activates once the \`zfb-example-webshop-preview\` Worker exists and its workers.dev subdomain is enabled.\n\n_Updated for commit \`${shortSha}\`._`;
 
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
