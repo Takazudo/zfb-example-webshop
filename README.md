@@ -160,6 +160,21 @@ Pushing to `main` runs `.github/workflows/deploy.yml`, which:
 4. deploys `dist/` to the `zfb-example-webshop` Cloudflare Pages
    project.
 
+### Cloudflare API token permissions
+
+The `CLOUDFLARE_API_TOKEN` repo secret is an **Account**-scoped custom token
+(Cloudflare dashboard → My Profile → API Tokens → Create Custom Token) with
+these permissions:
+
+- **Cloudflare Pages** — Edit
+- **D1** — Edit
+- **Account Settings** — Read
+
+Set **Account Resources → Include → (your account)**. No Zone permissions are
+needed — this repo deploys to a `*.pages.dev` host, not a custom domain. A
+single token can be shared across all `zfb-example-*` repos if it carries the
+union of every repo's permissions.
+
 ## zfb upgrade procedure
 
 In a Claude Code session, use the `l-handle-zfb-update` project skill
