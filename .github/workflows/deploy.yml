@@ -8,7 +8,10 @@
 #
 # Event-aware two-environment model (mirrors wrangler.toml):
 #   - push to main  -> production Worker `zfb-example-webshop`
-#                      (`wrangler deploy`, top-level config, D1 `webshop`)
+#                      (`wrangler deploy`, top-level config, D1 `webshop`),
+#                      served on the custom domain
+#                      `zfb-example-webshop.takazudomodular.com` and then
+#                      smoke-tested against it
 #   - pull_request  -> per-PR aliased VERSION of the preview Worker
 #                      `zfb-example-webshop-preview` (`wrangler versions
 #                      upload --env preview --preview-alias pr-<N>`,
@@ -100,6 +103,14 @@ jobs:
       # are NOT deployed here — see "Upload PR preview version" below, which
       # uploads a per-PR aliased version so concurrent PRs don't overwrite a
       # shared preview Worker (issue #25).
+      #
+      # This step also applies the `[[routes]]` custom domain from
+      # wrangler.toml, which needs `Zone · Workers Routes · Edit` on
+      # CLOUDFLARE_API_TOKEN in addition to the account-level permissions
+      # everything else uses. Until the shared token carries it, this step
+      # fails on the route with an authentication error even though the Worker
+      # bundle itself uploaded fine — see docs/cloudflare-setup.md.
+      #
       # set +e is used only so the deploy output is always echoed for
       # debugging; a non-zero wrangler exit still fails the step.
       - name: Deploy production Worker
@@ -235,6 +246,32 @@ jobs:
             echo "Unexpected error code(s): $CODE" >&2
             exit 1
           fi
+
+      # === POST-DEPLOY SMOKE TEST (custom domain) ===
+      # The only check that can prove the custom domain is really attached and
+      # serving: `wrangler deploy --dry-run` validates the config, and unit
+      # tests never touch the edge, but neither makes a request to
+      # `zfb-example-webshop.takazudomodular.com`. Push-to-main only — a PR's
+      # per-PR version lives on a workers.dev alias and never owns this domain.
+      #
+      # Not `continue-on-error`: a reachable-but-broken production site (bad
+      # status, or a catalogue that rendered without its D1 rows) must go red.
+      # The script itself decides what is red vs skipped — when the domain does
+      # not resolve yet it exits 0 with a `::notice::`, so the repo never shows
+      # a red deploy merely because Cloudflare is not wired up yet.
+      #
+      # Runs after the workers.dev step so it only fires on a deploy that
+      # actually succeeded (that step is continue-on-error, which does not
+      # affect job status, so it cannot mask a failed deploy here).
+      #
+      # TODO once zfb-example-webshop.takazudomodular.com is confirmed live
+      # (i.e. the token has Zone · Workers Routes · Edit and a deploy has
+      # created the route): add `env: SMOKE_REQUIRE_LIVE: "1"` here. That
+      # retires the "not wired up yet" skip, so a domain that later stops
+      # resolving goes red instead of quietly passing.
+      - name: Smoke-test the custom domain
+        if: github.event_name != 'pull_request'
+        run: node scripts/smoke.mjs
 
       # === STICKY PR PREVIEW COMMENT ===
       # Post/update a single comment pointing at the per-PR preview version URL.

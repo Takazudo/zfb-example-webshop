@@ -5,8 +5,10 @@ A small, polished **webshop demo** built with
 — Tailwind v4 styling, server-side rendered routes, and a shopping cart
 + accounts backed by **Cloudflare D1**.
 
-**Live:** https://zfb-example-webshop.takazudo.workers.dev/ — the
-production Cloudflare Worker. (The old `https://zfb-example-webshop.pages.dev/`
+**Live:** https://zfb-example-webshop.takazudomodular.com/ — the
+production Cloudflare Worker on its custom domain. The generated
+`https://zfb-example-webshop.takazudo.workers.dev/` host stays enabled and
+serves the same Worker. (The old `https://zfb-example-webshop.pages.dev/`
 Pages URL is being retired — see [Deployment](#deployment).)
 
 It demonstrates the parts of zfb a content-only demo cannot: SSR routes
@@ -168,7 +170,9 @@ files are never exposed as public assets.
 - **Push to `main` → production.** Installs deps, `pnpm build`, applies D1
   migrations to `webshop` (`wrangler d1 migrations apply webshop --remote`),
   then `wrangler deploy` — the production Worker `zfb-example-webshop`,
-  reachable at `https://zfb-example-webshop.takazudo.workers.dev/`.
+  reachable at `https://zfb-example-webshop.takazudomodular.com/` and at
+  `https://zfb-example-webshop.takazudo.workers.dev/`. Finally it
+  **smoke-tests the custom domain** (see below).
 - **Pull request → isolated preview.** Same build, but migrates the
   **separate** `webshop-preview` D1 database
   (`wrangler d1 migrations apply webshop-preview --env preview --remote`)
@@ -184,8 +188,62 @@ files are never exposed as public assets.
   **a PR never touches the production Worker or its database**. A sticky PR
   comment links the preview URL.
 
-Both deploys enable the Worker's `workers.dev` subdomain idempotently, so
-the site is reachable without a custom domain.
+Both deploys enable the Worker's `workers.dev` subdomain idempotently. That
+is not merely a convenience alias: the PR workflow's `pr-<N>-…workers.dev`
+preview URLs only route while the subdomain is live.
+
+### Custom domain
+
+Production is served on **`zfb-example-webshop.takazudomodular.com`**, declared
+in `wrangler.toml` as a top-level `[[routes]]` entry with `custom_domain = true`
+— which makes Cloudflare create and manage that hostname's DNS record and TLS
+certificate rather than matching an existing zone route pattern.
+
+The route is **production-only, deliberately**. `routes` is an inheritable
+wrangler key, so `[env.preview]` carries an explicit `routes = []` to override
+it; without that line the preview Worker inherits the production route and, in
+wrangler's own words, "deploying this environment will reassign these custom
+domains away from the top-level Worker". PR previews stay on their generated
+`*.workers.dev` aliases.
+
+### Post-deploy smoke test
+
+`scripts/smoke.mjs` (plain Node, no dependencies) runs from `deploy.yml` after
+every production deploy and requests the custom domain for real — the only
+check that can prove a domain is actually attached, since `wrangler deploy
+--dry-run` validates config and unit tests never touch the edge.
+
+It asserts HTTP 200 over TLS that validates for the host, an HTML response
+carrying the shop chrome, and — the assertion that matters — **seeded product
+names and a formatted price**. The catalogue is server-rendered from D1, so
+real product rows prove the SSR Worker booted, its `DB` binding resolved, and
+the migrations seeded; an empty grid fails.
+
+When the domain does not resolve yet (DNS, connection refused, or a certificate
+that has not been issued) the script exits 0 with a `::notice::` instead of
+failing, so the repo never shows a red deploy before Cloudflare is wired up. A
+site that *is* reachable but wrong — bad status, missing content, no product
+data — is always a hard failure, and so is a TLS error that is not
+provisioning-shaped: an **expired** certificate on a live domain is exactly the
+outage this check exists to catch, so it is deliberately excluded from the skip
+list rather than filed under "not wired up yet".
+
+Two environment variables:
+
+| Variable             | Effect                                                                     |
+| -------------------- | -------------------------------------------------------------------------- |
+| `SMOKE_URL`          | Point the same assertions at another host while debugging.                  |
+| `SMOKE_REQUIRE_LIVE` | `1` retires the skip path — every failure goes red, including DNS and TLS.  |
+
+`SMOKE_REQUIRE_LIVE` should be set on the CI step once the custom domain is
+confirmed live (there is a `TODO` on the step saying so). Until then the skip is
+what keeps the deploy green while the API token still lacks its Zone permission
+— but leaving it available forever would mean a domain that silently stopped
+resolving still looked like a passing build.
+
+```sh
+SMOKE_URL=https://zfb-example-webshop.takazudo.workers.dev/ node scripts/smoke.mjs
+```
 
 > **Retiring the old Pages project.** The previous
 > `https://zfb-example-webshop.pages.dev/` URL and its Cloudflare Pages
@@ -202,9 +260,12 @@ these permissions:
 - **Workers Scripts** — Edit
 - **D1** — Edit
 - **Account Settings** — Read
+- **Workers Routes** — Edit _(Zone-level, on the `takazudomodular.com` zone)_
 
-Set **Account Resources → Include → (your account)**. No Zone permissions are
-needed — this repo deploys to a `*.workers.dev` host, not a custom domain. A
+Set **Account Resources → Include → (your account)** and, for the Zone
+permission, **Zone Resources → Include → takazudomodular.com**. The Zone
+permission is what lets `wrangler deploy` create the `[[routes]]` custom domain;
+without it the deploy uploads the Worker and then fails on the route step. A
 single token can be shared across all `zfb-example-*` repos if it carries the
 union of every repo's permissions.
 

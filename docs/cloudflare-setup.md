@@ -5,7 +5,7 @@ D1. The [README's Deployment section](../README.md#deployment) explains
 *how the deploy works*; this document is the *do-this-in-order* list.
 
 > **This repo is already set up and live** at
-> https://zfb-example-webshop.takazudo.workers.dev/. Steps 1 and 2 are
+> https://zfb-example-webshop.takazudomodular.com/. Steps 1 and 2 are
 > done, the two D1 databases exist, and their `database_id` values are
 > already committed in `wrangler.toml`. Read this as the **re-setup /
 > token-rotation / new-fork** path — or jump straight to
@@ -19,7 +19,7 @@ What you are provisioning:
 | Production Worker| `zfb-example-webshop`                                  |
 | Preview Worker   | `zfb-example-webshop-preview`                          |
 | Databases        | D1 `webshop` (prod) + `webshop-preview` (PRs)          |
-| Custom domain    | none — deploys to `*.workers.dev`                      |
+| Custom domain    | `zfb-example-webshop.takazudomodular.com` (production) |
 | Worker secrets   | none                                                    |
 
 ## 1. Create (or reuse) the Cloudflare API token
@@ -35,16 +35,25 @@ Create Custom Token**, with exactly these permissions:
 - **Workers Scripts** — Edit
 - **D1** — Edit
 - **Account Settings** — Read
+- **Workers Routes** — Edit _(Zone-level)_
 
-Set **Account Resources → Include → (your account)**. **No Zone
-permissions** are needed — this repo deploys to a `*.workers.dev` host,
-not a custom domain.
+Set **Account Resources → Include → (your account)**, and for the
+Zone-level permission **Zone Resources → Include →
+takazudomodular.com**.
 
 Why each one: *Workers Scripts* covers `wrangler deploy`,
 `wrangler versions upload`, and the `.../scripts/<name>/subdomain` API
 calls the workflow makes; *D1* covers `d1 create` / `d1 list` /
 `d1 migrations apply`; *Account Settings* lets wrangler resolve the
-account the token belongs to.
+account the token belongs to; *Workers Routes* is what lets
+`wrangler deploy` create the `[[routes]]` custom domain
+`zfb-example-webshop.takazudomodular.com`.
+
+> **A token without Workers Routes fails late, not early.** The Worker
+> bundle uploads fine and only the route step errors, so the deploy goes
+> red with the site apparently working on `*.workers.dev`. If you see
+> that, the token is missing the Zone permission — it is not a config
+> problem.
 
 You also need your **Account ID** — Cloudflare dashboard → Workers &
 Pages → the ID shown in the right-hand sidebar.
@@ -119,8 +128,13 @@ Running either locally works too, provided `CLOUDFLARE_API_TOKEN` and
 click:
 
 - **Push to `main` → production.** Builds, applies migrations to
-  `webshop`, runs `wrangler deploy`, and idempotently enables the
-  `workers.dev` subdomain on `zfb-example-webshop`.
+  `webshop`, runs `wrangler deploy` (which also attaches the
+  `zfb-example-webshop.takazudomodular.com` custom domain), idempotently
+  enables the `workers.dev` subdomain on `zfb-example-webshop`, and then
+  runs `scripts/smoke.mjs` against the custom domain. The smoke test
+  exits 0 with a `::notice::` while the domain is still provisioning, so
+  a not-yet-live domain never reddens the deploy — but a domain that
+  answers with the wrong content does.
 - **Pull request → isolated per-PR preview.** Builds, applies migrations
   to the **separate** `webshop-preview` database, then runs
   `wrangler versions upload --env preview --preview-alias pr-<N>` and
@@ -139,10 +153,21 @@ gh run rerun <run-id>
 
 The catalogue is server-rendered **from D1**, so a page that contains a
 real product name proves the whole chain — Worker deployed, D1 bound,
-migrations seeded:
+migrations seeded.
+
+CI already checks exactly that on every push to `main`; the assertions
+live in `scripts/smoke.mjs`, which you can also run by hand:
 
 ```sh
-BASE=https://zfb-example-webshop.takazudo.workers.dev
+node scripts/smoke.mjs
+# or against the workers.dev host while the custom domain provisions:
+SMOKE_URL=https://zfb-example-webshop.takazudo.workers.dev/ node scripts/smoke.mjs
+```
+
+To poke at it manually instead:
+
+```sh
+BASE=https://zfb-example-webshop.takazudomodular.com
 
 curl -s -o /dev/null -w '%{http_code}\n' "$BASE/"          # 200
 curl -s "$BASE/" | grep -c 'Aeropress Go'                   # 1 → D1 is bound and seeded
@@ -188,6 +213,25 @@ recreated database gets a **new** UUID.
 **Deploy fails on auth / "account not found"** — the token is missing
 **Account Settings — Read**, `CLOUDFLARE_ACCOUNT_ID` is wrong, or the
 token was rotated in Cloudflare but not in GitHub. Re-run step 2.
+
+**Deploy uploads the Worker, then fails creating the route** — the token
+lacks **Workers Routes — Edit** on the `takazudomodular.com` zone. Add
+it in step 1 and re-run the deploy; no code change is needed, the
+`[[routes]]` block in `wrangler.toml` is already correct.
+
+**The smoke step says "not serving yet" and passes anyway** — that is by
+design. `scripts/smoke.mjs` treats DNS / connection / TLS failures as
+"Cloudflare has not finished wiring the hostname up" and exits 0 with a
+`::notice::`, because a not-yet-provisioned domain is not a code defect.
+Once the route exists and the certificate is issued the same run turns
+into a real assertion; a domain that answers with the wrong content (or
+a catalogue missing its D1 rows) fails the step.
+
+**A PR preview took over the custom domain** — `routes` is an
+inheritable wrangler key, so `[env.preview]` must keep its explicit
+`routes = []`. Delete that line and wrangler warns "deploying this
+environment will reassign these custom domains away from the top-level
+Worker" — which is exactly what it then does.
 
 **Migrations "already applied" but the table is empty** — a fresh
 database with a stale `d1_migrations` table cannot happen via CI, but a
