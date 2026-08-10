@@ -3,18 +3,18 @@ name: l-handle-zfb-update
 description: >-
   Update the zfb upstream dependencies (@takazudo/zfb +
   @takazudo/zfb-adapter-cloudflare + @takazudo/zfb-runtime) to the latest
-  "next" dist-tag release, review the upstream changes between versions, and
-  adapt this project's code if needed. Use when: (1) User says 'update zfb',
-  'bump zfb', 'zfb update', or 'handle zfb update', (2) A new zfb next release
-  is out and this example webshop should track it.
+  stable "latest" dist-tag release, review the upstream changes between
+  versions, and adapt this project's code if needed. Use when: (1) User says
+  'update zfb', 'bump zfb', 'zfb update', or 'handle zfb update', (2) A new zfb
+  release is out and this example webshop should track it.
 user-invocable: true
-argument-hint: "[target-version, e.g. 0.1.0-next.42 — omit to use latest next]"
+argument-hint: "[target-version, e.g. 2.3.0 — omit to use latest]"
 ---
 
 # Handle zfb Update
 
 Update `@takazudo/zfb`, `@takazudo/zfb-adapter-cloudflare`, and
-`@takazudo/zfb-runtime` to the latest `next` prerelease, check what changed
+`@takazudo/zfb-runtime` to the latest stable release, check what changed
 upstream, and adapt this project's code when an upstream change touches a
 feature this webshop actually uses.
 
@@ -32,16 +32,21 @@ touching them.
 
 ```bash
 CURRENT=$(node -p "require('./package.json').dependencies['@takazudo/zfb']")
-TARGET=$(npm view @takazudo/zfb dist-tags.next)
+TARGET=$(npm view @takazudo/zfb dist-tags.latest)
 ```
 
 - First assert the three zfb deps in `package.json` are **lockstep and
   exact-pinned** — `@takazudo/zfb`, `@takazudo/zfb-adapter-cloudflare`, and
   `@takazudo/zfb-runtime` must all read the same bare version (no `^`/`~`).
   If they disagree, something earlier went wrong — stop and ask the user.
-- **Always resolve the target from the `next` dist-tag, never `latest`** —
-  this project tracks the zfb prerelease line. The two tags may be equal
-  today, but when they diverge, `next` is the one to follow.
+- **Always resolve the target from the `latest` dist-tag, never `next`** —
+  this project tracks the zfb stable line. The `next` prerelease line this
+  project used to follow has **ended**: it stopped at `1.1.0-next.1`, a
+  prerelease of `1.1.0`, which has since shipped as stable. The `next`
+  dist-tag is therefore frozen on a version that is *older* than released
+  stable, and following it would pin a prerelease of an already-released
+  version. zfb graduated `0.1.0-next.99` → `1.0.0` and now ships stable
+  releases, so `latest` is the correct source.
 - If the user passed a version argument, use it as `TARGET` instead.
 - Verify `TARGET` exists for **all three** packages:
   `npm view "@takazudo/zfb@$TARGET" version`,
@@ -50,7 +55,7 @@ TARGET=$(npm view @takazudo/zfb dist-tags.next)
   runtime lacks `TARGET`, STOP and ask the user — never bump zfb ahead of
   its adapter.** A zfb/adapter version skew breaks the `dist/_worker.js`
   emission contract that every SSR route here depends on.
-- **If `CURRENT` equals `TARGET`: report "already at the latest next
+- **If `CURRENT` equals `TARGET`: report "already at the latest stable
   (<version>)" and STOP.**
 - **If `TARGET` is older than `CURRENT`** (possible with an explicit version
   argument): that is a downgrade — stop and ask the user to confirm before
@@ -186,7 +191,7 @@ it usually points at an upstream change that needs a project-side adaptation
 
 Summarize for the user:
 
-- Versions traversed (e.g. `next.31 → next.35`)
+- Versions traversed (e.g. `2.1.0 → 2.3.0`)
 - Notable upstream changes per release (one line each)
 - Adaptations made to project code (or "none needed")
 - Verification results (build output inspection, typecheck, smoke test)
