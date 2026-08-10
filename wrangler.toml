@@ -14,10 +14,26 @@ compatibility_flags = ["nodejs_compat"]
 # as a public asset.
 main = "./dist/_worker.js"
 
-# Production is reachable at `zfb-example-webshop.<account>.workers.dev`
-# (no custom domain). `workers_dev` is an inheritable key, so the
-# `[env.preview]` worker below also gets its own workers.dev URL.
+# The two keys below MUST stay ABOVE the `[assets]` table: in TOML any key
+# written after a table header belongs to that table, so `workers_dev` /
+# `preview_urls` placed lower would be parsed as `[assets]` fields —
+# wrangler warns "Unexpected fields found in assets field" and then
+# silently ignores them.
+
+# Production is served on the custom domain (`[[routes]]` below) AND on
+# `zfb-example-webshop.<account>.workers.dev`. Keeping workers.dev on is
+# not merely convenience: the PR workflow's `pr-<N>-…workers.dev` preview
+# URLs only route while the workers.dev subdomain is enabled. Inheritable,
+# so the `[env.preview]` worker gets its own workers.dev URL too.
 workers_dev = true
+
+# Per-deploy version preview URLs — the `pr-<N>-…workers.dev` hosts emitted
+# by `wrangler versions upload --preview-alias`, which the pull_request path
+# of deploy.yml depends on. Set EXPLICITLY because `preview_urls` defaults to
+# *match* `workers_dev`: the day someone flips `workers_dev = false` to stop
+# serving production on workers.dev, an omitted `preview_urls` would follow it
+# to false and every PR preview URL would silently disappear too.
+preview_urls = true
 
 [assets]
 directory = "./dist"
@@ -28,6 +44,20 @@ binding = "ASSETS"
 # directly and everything else invokes the Worker.
 not_found_handling = "404-page"
 run_worker_first = false
+
+# Custom domain — PRODUCTION ONLY. `custom_domain = true` tells Cloudflare to
+# create and manage the DNS record and TLS certificate for this hostname,
+# rather than matching an existing zone route pattern. This is a TOP-LEVEL
+# `[[routes]]` and must stay ABOVE `[env.preview]`, since every table written
+# after that header is scoped into the preview environment.
+#
+# Creating the route needs `Zone · Workers Routes · Edit` on the shared
+# CLOUDFLARE_API_TOKEN, on top of the account-level permissions the rest of
+# the deploy uses — see docs/cloudflare-setup.md. Until the token carries it,
+# the deploy's route step fails while the Worker itself still uploads.
+[[routes]]
+pattern = "zfb-example-webshop.takazudomodular.com"
+custom_domain = true
 
 # Production D1 database. The binding name `DB` is what becomes `env.DB`
 # inside an SSR route. `database_id` is produced by `wrangler d1 create`
@@ -41,11 +71,19 @@ database_id = "c7596e55-1342-4eeb-a662-e6bd9f0bf720"
 # Preview environment. Unlike Pages' implicit per-branch preview scoping,
 # a Workers named environment deploys as a SEPARATE Worker
 # (`zfb-example-webshop-preview`), so PRs never touch the production
-# Worker or its bindings. `main`, `[assets]`, `compatibility_flags`, and
-# `workers_dev` are inheritable and carry over from the top level;
-# `d1_databases` is NON-inheritable, so this block is what binds the
-# preview Worker to its OWN database (`webshop-preview`) — the isolation
-# guarantee that keeps a PR from mutating production shop data.
+# Worker or its bindings. `main`, `[assets]`, `compatibility_flags`,
+# `workers_dev`, and `preview_urls` are inheritable and carry over from the
+# top level; `d1_databases` is NON-inheritable, so the block below is what
+# binds the preview Worker to its OWN database (`webshop-preview`) — the
+# isolation guarantee that keeps a PR from mutating production shop data.
+[env.preview]
+# `routes` is ALSO inheritable, and that is the trap this line closes: left
+# implicit, the preview Worker would inherit the production `[[routes]]` above
+# and try to claim zfb-example-webshop.takazudomodular.com for itself, so a PR
+# preview could take over the real domain. An explicit empty list overrides the
+# inherited value; previews stay on their generated `*.workers.dev` URLs.
+routes = []
+
 [[env.preview.d1_databases]]
 binding = "DB"
 database_name = "webshop-preview"
