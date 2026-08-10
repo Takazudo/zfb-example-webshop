@@ -172,11 +172,17 @@ files are never exposed as public assets.
 - **Pull request → isolated preview.** Same build, but migrates the
   **separate** `webshop-preview` D1 database
   (`wrangler d1 migrations apply webshop-preview --env preview --remote`)
-  and deploys with `wrangler deploy --env preview` — a **separate** Worker
-  `zfb-example-webshop-preview` bound to `webshop-preview`. Because a
-  Workers named environment is its own Worker (unlike Pages' implicit
-  per-branch previews), **a PR never touches the production Worker or its
-  database**. A sticky PR comment links the preview URL.
+  and then uploads a **per-PR aliased version** of the preview Worker
+  (`wrangler versions upload --env preview --preview-alias pr-<N>`) rather
+  than deploying it. A plain `wrangler deploy --env preview` would overwrite
+  the single shared `zfb-example-webshop-preview` Worker, so two concurrent
+  PRs would clobber each other — last deploy wins (issue #25). An aliased
+  version instead gets its own stable URL
+  (`pr-<N>-zfb-example-webshop-preview.<subdomain>.workers.dev`) and is
+  **not** promoted to live traffic. `--env preview` makes the version
+  inherit the `[env.preview]` bindings, so it reads `webshop-preview` and
+  **a PR never touches the production Worker or its database**. A sticky PR
+  comment links the preview URL.
 
 Both deploys enable the Worker's `workers.dev` subdomain idempotently, so
 the site is reachable without a custom domain.
