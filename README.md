@@ -219,12 +219,31 @@ names and a formatted price**. The catalogue is server-rendered from D1, so
 real product rows prove the SSR Worker booted, its `DB` binding resolved, and
 the migrations seeded; an empty grid fails.
 
-When the domain does not resolve yet (DNS, connection, or a TLS certificate
-still provisioning) the script exits 0 with a `::notice::` instead of failing,
-so the repo never shows a red deploy before Cloudflare is wired up. A site that
-*is* reachable but wrong — bad status, missing content, no product data — is
-always a hard failure. Point it elsewhere while debugging with
-`SMOKE_URL=https://zfb-example-webshop.takazudo.workers.dev/ node scripts/smoke.mjs`.
+When the domain does not resolve yet (DNS, connection refused, or a certificate
+that has not been issued) the script exits 0 with a `::notice::` instead of
+failing, so the repo never shows a red deploy before Cloudflare is wired up. A
+site that *is* reachable but wrong — bad status, missing content, no product
+data — is always a hard failure, and so is a TLS error that is not
+provisioning-shaped: an **expired** certificate on a live domain is exactly the
+outage this check exists to catch, so it is deliberately excluded from the skip
+list rather than filed under "not wired up yet".
+
+Two environment variables:
+
+| Variable             | Effect                                                                     |
+| -------------------- | -------------------------------------------------------------------------- |
+| `SMOKE_URL`          | Point the same assertions at another host while debugging.                  |
+| `SMOKE_REQUIRE_LIVE` | `1` retires the skip path — every failure goes red, including DNS and TLS.  |
+
+`SMOKE_REQUIRE_LIVE` should be set on the CI step once the custom domain is
+confirmed live (there is a `TODO` on the step saying so). Until then the skip is
+what keeps the deploy green while the API token still lacks its Zone permission
+— but leaving it available forever would mean a domain that silently stopped
+resolving still looked like a passing build.
+
+```sh
+SMOKE_URL=https://zfb-example-webshop.takazudo.workers.dev/ node scripts/smoke.mjs
+```
 
 > **Retiring the old Pages project.** The previous
 > `https://zfb-example-webshop.pages.dev/` URL and its Cloudflare Pages

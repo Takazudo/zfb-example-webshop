@@ -263,6 +263,12 @@ jobs:
       # Runs after the workers.dev step so it only fires on a deploy that
       # actually succeeded (that step is continue-on-error, which does not
       # affect job status, so it cannot mask a failed deploy here).
+      #
+      # TODO once zfb-example-webshop.takazudomodular.com is confirmed live
+      # (i.e. the token has Zone · Workers Routes · Edit and a deploy has
+      # created the route): add `env: SMOKE_REQUIRE_LIVE: "1"` here. That
+      # retires the "not wired up yet" skip, so a domain that later stops
+      # resolving goes red instead of quietly passing.
       - name: Smoke-test the custom domain
         if: github.event_name != 'pull_request'
         run: node scripts/smoke.mjs

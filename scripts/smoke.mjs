@@ -22,13 +22,19 @@
  *
  * Exit contract:
  *   0 + a `::notice::` — the domain is not wired up yet (DNS does not resolve,
- *       the connection is refused, or TLS is still provisioning). The house rule
- *       is that this repo never shows a red deploy before Cloudflare is
- *       configured, so "not there yet" is a SKIP, not a failure.
+ *       the connection is refused, or the certificate has not been issued). The
+ *       house rule is that this repo never shows a red deploy before Cloudflare
+ *       is configured, so "not there yet" is a SKIP, not a failure.
  *   0 + a pass report — every assertion held.
  *   1 + an `::error::` — the domain answered but the site is wrong: bad status,
  *       non-HTML, missing chrome, or (the important one) no D1-backed product
- *       data. A reachable-but-broken site is always a hard failure.
+ *       data. A reachable-but-broken site is always a hard failure. So is a
+ *       TLS failure that is NOT provisioning-shaped — an expired cert on a live
+ *       domain is precisely the outage this check exists to catch, and must not
+ *       be filed under "not wired up yet".
+ *
+ * Set `SMOKE_REQUIRE_LIVE=1` once the domain is confirmed live to retire the
+ * skip path entirely, so a domain that later stops resolving goes red.
  */
 
 // Overridable so the same assertions can be pointed at the workers.dev host
@@ -78,8 +84,34 @@ const NOT_WIRED_UP_CODES = new Set([
   "UND_ERR_CONNECT_TIMEOUT", // undici connect-phase timeout
 ]);
 
-/** TLS/cert failures — the cert for a fresh custom domain can lag the DNS record. */
-const TLS_CODE_PATTERN = /CERT|TLS|SSL|HANDSHAKE/i;
+/**
+ * TLS failures that are shaped like "Cloudflare has not issued this hostname's
+ * certificate yet" — the cert for a fresh custom domain lags its DNS record, and
+ * the edge answers with a cert that does not cover the host (or no usable cert).
+ *
+ * Deliberately an allow-list rather than a /CERT|TLS|SSL/ pattern. A broad match
+ * also swallows `CERT_HAS_EXPIRED` and friends, which would keep this check green
+ * through a genuine TLS outage on an already-established domain — the failure mode
+ * a post-deploy smoke test exists to catch. A domain mid-provisioning never
+ * presents an *expired* cert, so that code is absent here on purpose: it fails.
+ */
+const PROVISIONING_TLS_CODES = new Set([
+  "ERR_TLS_CERT_ALTNAME_INVALID", // edge served a cert that does not cover this host
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "ERR_SSL_WRONG_VERSION_NUMBER",
+  "ECONNRESET", // handshake torn down before a cert was presented
+]);
+
+/**
+ * Escape hatch for the skip logic. Once the custom domain is confirmed live,
+ * set `SMOKE_REQUIRE_LIVE=1` on the CI step: every failure then goes red,
+ * including DNS and TLS. The skip path exists only to keep the deploy green
+ * BEFORE Cloudflare is wired up — it should not stay available forever, or a
+ * domain that silently stops resolving would look like a passing build.
+ */
+const REQUIRE_LIVE = ["1", "true"].includes((process.env.SMOKE_REQUIRE_LIVE ?? "").toLowerCase());
 
 /**
  * Cloudflare returns 530 when a hostname points at its edge but no origin or
@@ -112,12 +144,13 @@ function collectErrorCodes(err, codes = new Set()) {
 }
 
 function isNotWiredUpError(err) {
+  if (REQUIRE_LIVE) return false;
   const codes = [...collectErrorCodes(err)];
   if (codes.length === 0) return false;
   // Every observed code must point at "not reachable yet". A mixed bag that
   // includes something unrecognised is treated as a real failure, so a novel
   // breakage is never silently skipped.
-  return codes.every((code) => NOT_WIRED_UP_CODES.has(code) || TLS_CODE_PATTERN.test(code));
+  return codes.every((code) => NOT_WIRED_UP_CODES.has(code) || PROVISIONING_TLS_CODES.has(code));
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -208,7 +241,7 @@ async function main() {
     return 1;
   }
 
-  if (lastResponse.status === NOT_WIRED_UP_STATUS) {
+  if (lastResponse.status === NOT_WIRED_UP_STATUS && !REQUIRE_LIVE) {
     notice(
       `Skipping smoke test: ${TARGET_URL} returned HTTP ${NOT_WIRED_UP_STATUS} — the hostname ` +
         `reaches Cloudflare but no Worker is attached to it yet.`,
