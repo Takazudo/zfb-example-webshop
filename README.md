@@ -153,6 +153,9 @@ owns this repo's `CLOUDFLARE_*` secrets.
 
 ## Deployment
 
+> For an ordered, from-zero walkthrough (API token → GitHub secrets → D1
+> → deploy → verify), see [docs/cloudflare-setup.md](docs/cloudflare-setup.md).
+
 This repo deploys to **Cloudflare Workers Static Assets** (migrated from
 Cloudflare Pages advanced mode — see issue #23). `wrangler.toml` sets
 `main = "./dist/_worker.js"` (the SSR Worker the zfb adapter emits) and an
