@@ -25,13 +25,13 @@
     "preact-render-to-string": "^6.5.0"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260607.1",
+    "@cloudflare/workers-types": "^5.20260812.1",
     "@types/node": "^22.0.0",
     "chokidar-cli": "^3.0.0",
     "concurrently": "^9.2.1",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.9.3",
-    "wrangler": "^4.98.0"
+    "wrangler": "^4.121.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
