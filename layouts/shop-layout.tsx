@@ -115,7 +115,7 @@ export default function ShopLayout({
                 <a href="https://github.com/Takazudo/zudo-front-builder" class="text-brand underline">
                   zfb
                 </a>{" "}
-                — SSR routes on Cloudflare Pages, cart and accounts backed by Cloudflare D1.
+                — SSR routes on Cloudflare Workers, cart and accounts backed by Cloudflare D1.
               </p>
             </div>
           </footer>

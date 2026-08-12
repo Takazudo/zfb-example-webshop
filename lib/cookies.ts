@@ -27,8 +27,8 @@ export function readSessionId(request: Request): string | null {
 /**
  * Build the `Set-Cookie` value that establishes a session.
  *
- * `HttpOnly` (no JS access — XSS-resistant), `Secure` (Cloudflare Pages
- * is always HTTPS), `SameSite=Lax` (CSRF-resistant for this demo),
+ * `HttpOnly` (no JS access — XSS-resistant), `Secure` (Cloudflare Workers
+ * / workers.dev is always HTTPS), `SameSite=Lax` (CSRF-resistant for this demo),
  * `Max-Age=604800` (7 days — mirrored in sessions.expires_at).
  */
 export function sessionCookie(sessionId: string): string {
