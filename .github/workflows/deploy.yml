@@ -69,6 +69,13 @@ jobs:
       - name: Verify zfb CLI
         run: pnpm exec zfb --version
 
+      # `zfb build` is a Rust-built static-site engine step; it does not
+      # type-check the TypeScript/TSX source. Run `pnpm typecheck` (`zfb
+      # check`) here so a type error fails fast, before any build, D1
+      # migration, or deploy work happens.
+      - name: Typecheck
+        run: pnpm typecheck
+
       - name: Build
         run: pnpm build
 
