@@ -69,6 +69,13 @@ jobs:
       - name: Verify zfb CLI
         run: pnpm exec zfb --version
 
+      # `zfb build` is a Rust-built static-site engine step; it does not
+      # type-check the TypeScript/TSX source. Run `pnpm typecheck` (`zfb
+      # check`) here so a type error fails fast, before any build, D1
+      # migration, or deploy work happens.
+      - name: Typecheck
+        run: pnpm typecheck
+
       - name: Build
         run: pnpm build
 
@@ -142,8 +149,9 @@ jobs:
       # === ENABLE workers.dev + PREVIEW URLs on the preview Worker ===
       # MUST run before the version upload below. `wrangler versions upload
       # --preview-alias` only emits the alias URL when the Worker's
-      # subdomain has `previews_enabled` = true: in wrangler 4.98.0 the
-      # command fetches `.../scripts/<name>/subdomain` and, if
+      # subdomain has `previews_enabled` = true: verified on wrangler 4.98.0
+      # and re-verified on 4.121.0 that the command fetches
+      # `.../scripts/<name>/subdomain` and, if
       # `previews_enabled` is false, skips computing the preview URL
       # entirely — so the sticky comment would stay "pending" forever and
       # no working preview would exist. `workers_dev = true` in
@@ -184,9 +192,9 @@ jobs:
       # concurrent PRs get independent previews that never clobber each
       # other. `--env preview` makes the version inherit `[env.preview]`
       # bindings, so it reads the isolated `webshop-preview` D1 — NEVER the
-      # production `webshop` database. (Verified against wrangler 4.98.0 that
-      # `--env` and `--preview-alias` compose and the binding resolves to
-      # `webshop-preview`.)
+      # production `webshop` database. (Verified against wrangler 4.98.0, and
+      # re-verified against 4.121.0, that `--env` and `--preview-alias`
+      # compose and the binding resolves to `webshop-preview`.)
       #
       # Tolerant by design (continue-on-error + no hard exit): the upload
       # needs the `zfb-example-webshop-preview` Worker to already exist with
