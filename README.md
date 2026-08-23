@@ -273,9 +273,9 @@ union of every repo's permissions.
 
 In a Claude Code session, use the `l-handle-zfb-update` project skill
 (`.claude/skills/l-handle-zfb-update/SKILL.md`) — it resolves the latest
-`next` dist-tag, reviews every intermediate upstream release note BEFORE
-bumping, bumps all three zfb packages in lockstep with exact pins, and
-verifies with a clean build.
+stable `latest` dist-tag, reviews every intermediate upstream release note
+BEFORE bumping, bumps all three zfb packages in lockstep with exact pins,
+and verifies with a clean build.
 
 Manual fallback summary:
 
