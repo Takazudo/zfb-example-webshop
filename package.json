@@ -15,21 +15,18 @@
     "typecheck": "zfb check",
     "//cf": "Binding-realistic Cloudflare dev loop (D1 + wrangler). See README.",
     "dev:cf:setup": "wrangler d1 migrations apply webshop --local && pnpm build",
-    "dev:cf": "pnpm dev:cf:setup && concurrently --names 'wrangler,watch' --kill-others 'wrangler dev --port 8788' \"chokidar 'pages/**/*.tsx' 'components/**/*.tsx' 'layouts/**/*.tsx' 'lib/**/*.ts' 'styles/**/*.css' --command 'pnpm build' --initial false --debounce 200\""
+    "dev:cf": "pnpm dev:cf:setup && concurrently --names 'wrangler,watch' --kill-others 'wrangler dev --port 8788' \"chokidar 'pages/**/*.tsx' 'components/**/*.tsx' 'layouts/**/*.tsx' 'lib/**/*.ts' 'styles/**/*.css' 'zfb.config.ts' --command 'pnpm build' --initial false --debounce 200\""
   },
   "dependencies": {
-    "@takazudo/zfb": "2.15.0",
-    "@takazudo/zfb-adapter-cloudflare": "2.15.0",
-    "@takazudo/zfb-runtime": "2.15.0",
-    "preact": "^10.22.0",
-    "preact-render-to-string": "^6.5.0"
+    "@takazudo/zfb": "3.0.0",
+    "@takazudo/zfb-adapter-cloudflare": "3.0.0",
+    "@takazudo/zfb-runtime": "3.0.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260812.1",
     "@types/node": "^22.0.0",
     "chokidar-cli": "^3.0.0",
     "concurrently": "^9.2.1",
-    "tailwindcss": "^4.1.0",
     "typescript": "^5.9.3",
     "wrangler": "^4.121.0"
   },

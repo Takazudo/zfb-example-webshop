@@ -1,4 +1,4 @@
-import type { ComponentChildren } from "preact";
+import type { Child } from "@takazudo/zfb/zudo-react";
 import type { User } from "../lib/types";
 import "../styles/global.css";
 
@@ -11,7 +11,7 @@ type Props = {
   cartCount?: number;
   /** Highlight the active nav link. */
   activePath?: string;
-  children: ComponentChildren;
+  children: Child;
 };
 
 const SITE_NAME = "Driftwood Goods";
@@ -52,7 +52,7 @@ export default function ShopLayout({
   return (
     <html lang="en">
       <head>
-        <meta charSet="utf-8" />
+        <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="description" content={TAGLINE} />
         <title>{pageTitle}</title>
