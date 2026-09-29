@@ -11,8 +11,8 @@ import { formatPrice } from "../lib/format";
  */
 export function ProductCard({ product, signedIn }: { product: Product; signedIn: boolean }) {
   return (
-    <article class="flex flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-card transition-shadow hover:shadow-raised">
-      <div class="flex aspect-4/3 items-center justify-center bg-surface-sunken text-[4rem]">
+    <article class="flex flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-card transition-[box-shadow] hover:shadow-raised">
+      <div class="flex aspect-[4/3] items-center justify-center bg-surface-sunken text-[4rem]">
         <span role="img" aria-label={product.name}>
           {product.emoji}
         </span>

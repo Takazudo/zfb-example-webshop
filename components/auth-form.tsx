@@ -61,7 +61,7 @@ export function AuthForm({
             type="password"
             name="password"
             required
-            minLength={8}
+            minlength={8}
             autocomplete={isSignup ? "new-password" : "current-password"}
             placeholder={isSignup ? "At least 8 characters" : "Your password"}
             class="rounded-md border border-line bg-surface px-hsp-sm py-vsp-xs text-body outline-none transition-colors focus:border-brand"

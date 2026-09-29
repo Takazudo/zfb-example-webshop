@@ -12,10 +12,10 @@ export const prerender = false;
 /**
  * Order confirmation page — `/order?id=<n>`.
  *
- * A query-string id (not a `/order/:id` path param) is deliberate: in
- * current zfb, dynamic route segments (`[id].tsx`) are only
- * expanded for SSG via `paths()` and never reach the SSR worker, so a
- * `prerender = false` route must be a static path.
+ * The query-string id (rather than a `/order/[id]` path param) is this
+ * recipe's stable URL contract. zfb can also serve a dynamic
+ * `prerender = false` route per request (`{ params }`, no `paths()`),
+ * so the choice is not forced by the framework.
  *
  * Reached via the post-checkout redirect, but also durable as a
  * receipt — it loads the order fresh from D1 and is scoped to the

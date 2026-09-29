@@ -101,11 +101,13 @@ Flag anything that touches a surface this project uses:
 
 | Upstream surface | Where this project uses it |
 | --- | --- |
-| `defineConfig` schema (`@takazudo/zfb/config`) | `zfb.config.ts` — `framework: "preact"`, `base`, `tailwind.enabled`, `adapter`. No `collections`: the catalogue lives in D1 |
+| `defineConfig` schema (`@takazudo/zfb/config`) | `zfb.config.ts` — `base`, `wind` (spec, reset, tokens, breakpoints), `adapter`. No `collections`: the catalogue lives in D1 |
+| zudo-react (`@takazudo/zfb/zudo-react`, `@takazudo/zfb/zudo-react/server`) | JSX in every `.tsx` (`tsconfig.json` `jsxImportSource`); `Child` types in `layouts/` + `lib/render.ts`; `lib/render.ts` calls the named `renderToString` (no doctype emitted — the helper prefixes `<!DOCTYPE html>`). Intrinsic attributes use HTML spellings (`charset`, `minlength`) |
+| zudo-wind (utility language, reset, token schema, catalog) | every `class="…"` in `pages/`, `components/`, `layouts/`; `wind.tokens` in `zfb.config.ts`; `styles/global.css` (authored `:root` colours referenced by the colour tokens, `var(--zw-font-size-body)`, authored `contents` / `backdrop-blur` classes). Catalog or reset changes can silently change the rendered shop |
 | Cloudflare adapter (`@takazudo/zfb-adapter-cloudflare`) | `getCloudflareContext<Env>()` imported by every page under `pages/`; emits `dist/_worker.js` + `dist/_zfb_inner.mjs`; `wrangler.toml` contract (`nodejs_compat`, `pages_build_output_dir`, `DB` binding → `env.DB`) |
 | SSR page contract (`prerender = false`, required `frontmatter` export, pages returning `Response`) | every file under `pages/` (all routes are SSR); `lib/render.ts` (`htmlResponse`) |
 | Runtime page router (`@takazudo/zfb-runtime`) | zfb bundles the runtime's `createPageRouter` into `dist/_zfb_inner.mjs` as the Worker fetch handler — every `prerender = false` route here dispatches through it, so review router / `Response`-contract changes. Islands / client-router features are unused (no islands in this project) |
-| Tailwind / CSS pipeline | `styles/global.css` (Tailwind v4 `@theme`); emitted `dist/assets/styles-<hash>.css`; `scripts/stable-css.mjs` asserts exactly ONE `styles-*.css` and copies it to `assets/app.css`; `layouts/shop-layout.tsx` hard-codes `/assets/app.css` as the consumer |
+| CSS pipeline | `styles/global.css` (authored layers; no Tailwind directives — any leftover one is a ZW009 build error); emitted `dist/assets/styles-<hash>.css`; `scripts/stable-css.mjs` asserts exactly ONE `styles-*.css` and copies it to `assets/app.css`; `layouts/shop-layout.tsx` hard-codes `/assets/app.css` as the consumer |
 | CLI commands (`zfb dev/build/preview/check`) | `package.json` scripts (`dev`, `build`, `preview`, `typecheck`, `dev:cf`) |
 | Documented behavior (commands, build output shape) | `README.md` hard-codes the command table, the "no static HTML, only a worker" architecture description, and the upgrade procedure |
 
@@ -114,8 +116,18 @@ Content collections, pagination, dynamic routes (`paths()` /
 project — upstream changes there need no action.
 
 **Rule: adapt only if this project actually uses the changed feature.**
-Internal zfb changes (Rust internals, docs, frameworks other than preact) need
+Internal zfb changes (Rust internals, docs, features this shop does not use) need
 no action — note them in the report and move on.
+
+### Major versions are migrations
+
+If `TARGET` crosses a **major** version (e.g. 2.x → 3.0), stop treating it as
+a version bump. Read the upstream migration guides first
+(`docs/src/content/docs/guides/migrating-to-v3.mdx` and the zudo-react /
+zudo-wind guides at the `v<TARGET>` tag). Plan the code, config and CSS changes.
+The Step 5 **parity checks are then mandatory**, not optional. The 2.15 → 3.0
+migration replaced Preact with zudo-react and Tailwind v4 with zudo-wind, and
+ported the `@theme` token set to `wind.tokens`.
 
 ## Step 3: Bump all three packages
 
@@ -168,20 +180,49 @@ Then inspect `dist/`:
   — the build must produce NO static HTML pages)
 - exactly one `dist/assets/styles-*.css`, copied to `dist/assets/app.css`
   (the path `layouts/shop-layout.tsx` links)
-- No stranded `zfb-tailwind-entry-*.css` temp files
+- `dist/assets/app.css` is byte-identical to that `styles-*.css`
+- `pnpm exec zfb wind audit` shows no dead classes and no conflicts. Its
+  `auditInfo` lines for import paths and URLs are lexer noise
+  (zudo-front-builder#3370)
 
-Optional but recommended — D1-backed smoke test. Use `pnpm dev:cf` (NOT
-`pnpm dev`): every route here reads `env.DB`, and only the wrangler loop
-provides the binding. It applies local D1 migrations, builds, and serves the
-worker on port 8788:
+Optional for a minor bump, **mandatory for a major one**: a D1-backed check.
+Every route reads `env.DB`, so it needs wrangler, not `pnpm dev`. For
+day-to-day work `pnpm dev:cf` is enough (it applies local migrations into the
+repo's `.wrangler`, builds, and serves on port 8788):
 
 ```bash
 pnpm dev:cf   # then: / and /login return 200; unauthenticated /cart returns 303 → /login
 ```
 
+For a **parity check** that mutates data (signup, cart, checkout), use an
+isolated local D1 instead of the repo's `.wrangler`, and never `--remote`.
+Check out the previous version in a separate git worktree and serve both side
+by side on explicit free ports. Each version gets its own `--persist-to` dir,
+and each dir is used for both the migrate and the dev steps:
+
+```bash
+pnpm exec wrangler d1 migrations apply webshop --local --persist-to "$STATE_DIR"
+pnpm exec wrangler dev --local --ip 127.0.0.1 --port "$PORT" --inspector-port "$INSPECT_PORT" --persist-to "$STATE_DIR"
+SMOKE_URL="http://127.0.0.1:$PORT/" node scripts/smoke.mjs   # ALWAYS pass a local SMOKE_URL
+```
+
+Then drive the same signup → cart → checkout → order → logout sequence
+against both, and compare:
+
+- status, `location` and `set-cookie`;
+- the rendered DOM;
+- responsive screenshots and computed styles, on both sides of the 640px and
+  768px breakpoints.
+
+Kill every server you started by port: wrangler **and** its workerd child.
+
+**Never run `scripts/smoke.mjs` without `SMOKE_URL`.** Its default target is
+the production custom domain.
+
 Never run `pnpm dev` and `pnpm dev:cf` at the same time — `pnpm dev`'s
 `predev` step wipes the `dist/` that `wrangler pages dev` is actively
 serving (see `README.md`).
+(`wrangler dev` here, not the old `wrangler pages dev`.)
 
 If verification fails, map the failure back to the release notes from Step 2 —
 it usually points at an upstream change that needs a project-side adaptation
