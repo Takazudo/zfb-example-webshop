@@ -2,7 +2,7 @@
 
 A small, polished **webshop demo** built with
 [zfb (zudo-front-builder)](https://github.com/Takazudo/zudo-front-builder)
-— Tailwind v4 styling, server-side rendered routes, and a shopping cart
+— zudo-wind utility styling, server-side rendered routes, and a shopping cart
 + accounts backed by **Cloudflare D1**.
 
 **Live:** https://zfb-example-webshop.takazudomodular.com/ — the
@@ -34,7 +34,8 @@ client-side JavaScript**. All interactivity is server round-trips.
 
 | Concern        | How                                                            |
 | -------------- | -------------------------------------------------------------- |
-| Framework      | zfb + Preact, Tailwind v4                                      |
+| Framework      | zfb 3 — zudo-react (owned JSX runtime), zudo-wind (utilities)  |
+| HTML rendering | `renderToString` from `@takazudo/zfb/zudo-react/server` (`lib/render.ts`) |
 | SSR routes     | `export const prerender = false` — run as a Cloudflare Worker  |
 | Worker binding | `env.DB` (D1) read via `getCloudflareContext<Env>()`           |
 | Adapter        | `@takazudo/zfb-adapter-cloudflare` → emits `dist/_worker.js`   |
@@ -44,10 +45,28 @@ client-side JavaScript**. All interactivity is server round-trips.
 Note: all routes are `prerender = false` (the catalogue reads live
 prices from D1), so the build produces no static HTML pages — only the
 SSR worker (`dist/_worker.js` + `dist/_zfb_inner.mjs`) and the compiled
-CSS asset. The order confirmation page is `/order?id=<n>` (a query
-string, not a `/order/:id` path param) because zfb dynamic route
-segments require a build-time `paths()` enumeration, and order ids are
-created at runtime.
+CSS asset. The order confirmation page is `/order?id=<n>` — a query
+string rather than a `/order/[id]` path param. That is a choice of this
+recipe, kept stable as its URL contract: current zfb also serves a
+dynamic `prerender = false` route per request (the handler receives
+`{ params }`, no `paths()` needed), so a path param would work too.
+
+### Styling and the stable stylesheet URL
+
+Pages use zudo-wind utility classes (`px-hsp-md`, `text-title`,
+`bg-brand`, `shadow-card`, …). zudo-wind has no implicit theme, so the
+shop's semantic token set — colours, the two spacing axes (`hsp-*`
+horizontal, `vsp-*` vertical), the type scale, radii, shadows and the
+`sm`/`md` breakpoints — is declared under `wind.tokens` in
+`zfb.config.ts`. The colour tokens point at authored custom properties in
+`styles/global.css`, which also holds the base rules and the few authored
+classes the wind catalog does not provide (`contents`, `backdrop-blur`).
+
+zfb links the hashed `dist/assets/styles-<hash>.css` only into statically
+generated HTML, and this shop has none — every page is an SSR `Response`.
+So `layouts/shop-layout.tsx` links the fixed path `/assets/app.css`, and
+the postbuild step `scripts/stable-css.mjs` copies the single hashed
+stylesheet to that name (`pnpm build` = `zfb build && node scripts/stable-css.mjs`).
 
 ## Dependencies
 
@@ -109,7 +128,8 @@ then starts two processes side-by-side via `concurrently`:
   `[assets]`), serves the built worker against the local D1, and
   auto-reloads when `dist/` changes.
 - `chokidar` — watches `pages/`, `components/`, `layouts/`, `lib/`,
-  `styles/`; re-runs `pnpm build` on save (200ms debounce).
+  `styles/` and `zfb.config.ts` (the wind tokens live there); re-runs
+  `pnpm build` on save (200ms debounce).
 
 Edit-to-browser latency is roughly 1–2 seconds. Ctrl-C kills both
 processes cleanly.
@@ -282,8 +302,13 @@ Manual fallback summary:
 1. Bump the npm deps — set `@takazudo/zfb`, `@takazudo/zfb-runtime`,
    and `@takazudo/zfb-adapter-cloudflare` in `package.json` to the new
    version (all three on the SAME version) and run `pnpm install`.
-2. Verify: `pnpm build && pnpm typecheck`, then commit and push.
+2. Verify: `pnpm typecheck && pnpm build`, then commit and push.
    CI re-installs and re-deploys.
+
+A **major** zfb bump is a migration, not a version edit — e.g. 2.x → 3.0
+replaced Preact with zudo-react and Tailwind with zudo-wind. Follow the
+skill's major-bump steps and compare the running shop against the
+previous version before merging.
 
 If the bump crosses a zfb release that changes `@takazudo/zfb-adapter-cloudflare`,
 manually re-test the catalogue (`/`) and `/cart` after deploy — those SSR-D1
