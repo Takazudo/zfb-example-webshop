@@ -313,3 +313,9 @@ previous version before merging.
 If the bump crosses a zfb release that changes `@takazudo/zfb-adapter-cloudflare`,
 manually re-test the catalogue (`/`) and `/cart` after deploy — those SSR-D1
 routes depend on the adapter's Worker binding thread.
+
+The 3.1.0 update restores the product card’s `aspect-4/3` and
+`transition-shadow` utilities, now supported directly by zudo-wind
+([upstream report](https://github.com/Takazudo/zudo-front-builder/issues/3393)).
+`transition-colors` also includes outline colour; the existing 150ms `ease`
+timing remains. Authored reset-parity rules are still needed.
