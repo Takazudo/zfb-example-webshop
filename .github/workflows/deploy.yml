@@ -37,6 +37,7 @@ on:
   pull_request:
     branches:
       - main
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -92,7 +93,9 @@ jobs:
       # `--env preview`; without it wrangler errors "Couldn't find a D1 DB
       # with the name or binding 'webshop-preview'". Production lives at
       # top-level config — no `--env` (there is no `[env.production]`).
+      # Draft PRs validate locally without writing remote state or publishing previews.
       - name: Apply D1 migrations (remote)
+        if: github.event_name != 'pull_request' || !github.event.pull_request.draft
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -163,7 +166,7 @@ jobs:
       # brand-new preview Worker the script doesn't exist yet and this 404s
       # harmlessly until a first upload creates it.
       - name: Enable preview URLs on preview Worker
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && !github.event.pull_request.draft
         continue-on-error: true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -204,7 +207,7 @@ jobs:
       # note) rather than reddening the PR check.
       - name: Upload PR preview version
         id: preview
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && !github.event.pull_request.draft
         continue-on-error: true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -287,7 +290,7 @@ jobs:
       # is continue-on-error, so an empty preview_url just yields the
       # "pending" body rather than skipping the comment.
       - name: Upsert sticky PR preview comment
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && !github.event.pull_request.draft
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           PREVIEW_URL: ${{ steps.preview.outputs.preview_url }}
