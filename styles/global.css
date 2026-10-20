@@ -117,10 +117,6 @@
  * provide. Same declarations the markup had under Tailwind v4.
  */
 @layer components {
-  .contents {
-    display: contents;
-  }
-
   .backdrop-blur {
     -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);

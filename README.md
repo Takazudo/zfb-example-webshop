@@ -60,7 +60,8 @@ horizontal, `vsp-*` vertical), the type scale, radii, shadows and the
 `sm`/`md` breakpoints — is declared under `wind.tokens` in
 `zfb.config.ts`. The colour tokens point at authored custom properties in
 `styles/global.css`, which also holds the base rules and the few authored
-classes the wind catalog does not provide (`contents`, `backdrop-blur`).
+classes the wind catalog does not provide (`backdrop-blur`, reserved via
+`wind.authoredClasses`).
 
 zfb links the hashed `dist/assets/styles-<hash>.css` only into statically
 generated HTML, and this shop has none — every page is an SSR `Response`.

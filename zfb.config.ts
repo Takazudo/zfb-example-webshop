@@ -24,6 +24,8 @@ export default defineConfig({
   wind: {
     spec: 1,
     reset: "owned-v1",
+    // `backdrop-blur` is authored in styles/global.css (no wind utility exists for it).
+    authoredClasses: { "backdrop-blur": true },
     tokens: {
       // Numeric sizing (`min-w-5`, `h-14`) — the 0.25rem unit the markup was written against.
       spacingUnit: "0.25rem",
