@@ -34,7 +34,7 @@ client-side JavaScript**. All interactivity is server round-trips.
 
 | Concern        | How                                                            |
 | -------------- | -------------------------------------------------------------- |
-| Framework      | zfb 3 — zudo-react (owned JSX runtime), zudo-wind (utilities)  |
+| Framework      | zfb 6 — zudo-react (owned JSX runtime), zudo-wind (utilities)  |
 | HTML rendering | `renderToString` from `@takazudo/zfb/zudo-react/server` (`lib/render.ts`) |
 | SSR routes     | `export const prerender = false` — run as a Cloudflare Worker  |
 | Worker binding | `env.DB` (D1) read via `getCloudflareContext<Env>()`           |
@@ -81,6 +81,9 @@ checkout.
 ## Local development
 
 ### Fresh checkout
+
+Requires **Node.js 24 or newer**. `@takazudo/zfb` 5.0 and later declare
+`engines.node` `>=24.0.0` (this repo's `package.json` matches that).
 
 ```sh
 git clone https://github.com/Takazudo/zfb-example-webshop.git
