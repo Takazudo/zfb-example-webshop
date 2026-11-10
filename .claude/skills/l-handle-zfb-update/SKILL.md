@@ -109,6 +109,7 @@ Flag anything that touches a surface this project uses:
 | Runtime page router (`@takazudo/zfb-runtime`) | zfb bundles the runtime's `createPageRouter` into `dist/_zfb_inner.mjs` as the Worker fetch handler — every `prerender = false` route here dispatches through it, so review router / `Response`-contract changes. Islands / client-router features are unused (no islands in this project) |
 | CSS pipeline | `styles/global.css` (authored layers; no Tailwind directives — any leftover one is a ZW009 build error); emitted `dist/assets/styles-<hash>.css`; `scripts/stable-css.mjs` asserts exactly ONE `styles-*.css` and copies it to `assets/app.css`; `layouts/shop-layout.tsx` hard-codes `/assets/app.css` as the consumer |
 | CLI commands (`zfb dev/build/preview/check`) | `package.json` scripts (`dev`, `build`, `preview`, `typecheck`, `dev:cf`) |
+| Node.js engine | `package.json` `engines.node` — 5.0+ requires `>=24.0.0` (CI already uses Node 24). Do not leave the field on 22 |
 | Documented behavior (commands, build output shape) | `README.md` hard-codes the command table, the "no static HTML, only a worker" architecture description, and the upgrade procedure |
 
 Content collections, pagination, dynamic routes (`paths()` /
